@@ -1,0 +1,7 @@
+# Normalize line endings: store LF in the repo, let each checkout use its platform default
+* text=auto
+
+# Scripts that need specific line endings regardless of platform
+*.sh  text eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
