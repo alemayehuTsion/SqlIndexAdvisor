@@ -10,6 +10,13 @@ Project overview, layout and roadmap: @README.md
 - No secrets in the repo: API keys and connection strings come from user-secrets or environment variables.
 - Use full absolute paths in shell commands.
 
+## Code style
+
+- Favour clean code over commented code: make code explain itself through clear names and small,
+  well-named methods. Reach for a comment only when the code cannot carry the meaning.
+- No comments that just repeat what the code already says. Comment only the why: intent, constraints,
+  non-obvious decisions, or workarounds.
+
 ## Decisions made
 
 - Display name "SQL Index Advisor"; code name `SqlIndexAdvisor`.
