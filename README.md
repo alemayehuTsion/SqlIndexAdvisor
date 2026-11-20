@@ -22,7 +22,7 @@ All data in this repository is synthetic.
 | # | Milestone | Status |
 |---|---|---|
 | 0 | Solution, global.json, .gitignore, git init, projects, first test | Done |
-| 1 | Synthetic database + slow query | |
+| 1 | Synthetic database + slow query | Done |
 | 2 | Collector (DMVs, Dapper) | |
 | 3 | Rules engine | |
 | 4 | Safety validator | |
