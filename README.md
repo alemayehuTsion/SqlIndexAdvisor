@@ -1,5 +1,7 @@
 # SQL Index Advisor
 
+[![CI](https://github.com/alemayehuTsion/SqlIndexAdvisor/actions/workflows/ci.yml/badge.svg)](https://github.com/alemayehuTsion/SqlIndexAdvisor/actions/workflows/ci.yml)
+
 An AI-assisted index advisor for SQL Server, built on .NET 10.
 
 It reads database metadata and usage statistics, proposes index improvements using deterministic rules,

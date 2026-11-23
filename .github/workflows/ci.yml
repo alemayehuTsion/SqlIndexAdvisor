@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore SqlIndexAdvisor.slnx
+
+      - name: Build
+        run: dotnet build SqlIndexAdvisor.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test SqlIndexAdvisor.slnx --configuration Release --no-build
+
+      - name: Check formatting
+        run: dotnet format SqlIndexAdvisor.slnx --verify-no-changes --no-restore
