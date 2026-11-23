@@ -8,9 +8,9 @@ realistic to analyze. Every value is generated; no real data is involved.
 Requires SQL Server 2019 or later, `sqlcmd`, and Windows authentication.
 
 ```powershell
-.\run-all.ps1                                       # create on localhost\MSSQLSERVER02
-.\run-all.ps1 -ServerInstance 'localhost\SQL2022'   # another instance
-.\run-all.ps1 -Recreate                             # drop the database first, then rebuild
+.\run-all.ps1                                         # create on the default instance (localhost)
+.\run-all.ps1 -ServerInstance 'localhost\MyInstance'  # a named instance
+.\run-all.ps1 -Recreate                               # drop the database first, then rebuild
 ```
 
 Without `-Recreate`, an existing database is never touched: every script stops at its guard. The scripts

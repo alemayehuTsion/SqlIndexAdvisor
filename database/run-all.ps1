@@ -1,5 +1,5 @@
 param(
-    [string] $ServerInstance = 'localhost\MSSQLSERVER02',
+    [string] $ServerInstance = 'localhost',
     [switch] $Recreate
 )
 
