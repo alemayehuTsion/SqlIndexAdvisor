@@ -3,6 +3,9 @@ using Dapper;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 
+using SqlIndexAdvisor.Core;
+using SqlIndexAdvisor.Core.Collection;
+
 var configuration = new ConfigurationBuilder()
     .AddUserSecrets<Program>()
     .AddEnvironmentVariables(prefix: "SQLINDEXADVISOR_")
@@ -24,3 +27,14 @@ var server = await connection.QuerySingleAsync<(string Version, string Edition, 
     """);
 
 Console.WriteLine($"Connected to {server.Database} on SQL Server {server.Version} ({server.Edition})");
+Console.WriteLine();
+
+var indexes = await new DatabaseCollector(connection).CollectIndexesAsync();
+
+Console.WriteLine($"{"Index",-50} {"Keys",-28} {"Reads",8} {"Writes",10}");
+foreach (var index in indexes)
+{
+    var name = $"{index.Table}.{SqlIdentifier.Quote(index.Name)}";
+    var keys = string.Join(", ", index.KeyColumns.Select(key => key.IsDescending ? $"{key.Name} DESC" : key.Name));
+    Console.WriteLine($"{name,-50} {keys,-28} {index.Usage.TotalReads,8:N0} {index.Usage.LeafWrites,10:N0}");
+}
