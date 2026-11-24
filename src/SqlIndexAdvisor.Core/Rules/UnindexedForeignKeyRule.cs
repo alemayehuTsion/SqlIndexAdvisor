@@ -11,16 +11,9 @@ public sealed class UnindexedForeignKeyRule : IIndexRule
             .Where(foreignKey => !HasSupportingIndex(snapshot, foreignKey))
             .Select(foreignKey => UnindexedFinding(snapshot, foreignKey));
 
-    // An index supports the foreign key when its leading key columns are exactly the foreign key columns, in any
-    // order: seeks on (A, B) work for an index on (B, A, C) but not for one on (A, C, B).
     private static bool HasSupportingIndex(DatabaseSnapshot snapshot, ForeignKey foreignKey) =>
-        snapshot.Indexes
-            .Where(index => index.Table == foreignKey.Table && index.KeyColumns.Count >= foreignKey.Columns.Count)
-            .Any(index => index.KeyColumns
-                .Take(foreignKey.Columns.Count)
-                .Select(key => key.Name)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase)
-                .SetEquals(foreignKey.Columns));
+        snapshot.Indexes.Any(index =>
+            index.Table == foreignKey.Table && IndexCoverage.LeadsWith(index, [.. foreignKey.Columns]));
 
     private Finding UnindexedFinding(DatabaseSnapshot snapshot, ForeignKey foreignKey)
     {

@@ -8,6 +8,7 @@ public sealed class SnapshotBuilder
 
     private readonly List<IndexInfo> _indexes = [];
     private readonly List<ForeignKey> _foreignKeys = [];
+    private readonly List<MissingIndex> _missingIndexes = [];
     private TimeSpan _window = TimeSpan.FromDays(30);
 
     public static SnapshotBuilder Snapshot() => new();
@@ -47,6 +48,19 @@ public sealed class SnapshotBuilder
         return this;
     }
 
+    public SnapshotBuilder WithMissingIndex(
+        string table,
+        string[] equality,
+        string[]? inequality = null,
+        string[]? includes = null,
+        long seeks = 100,
+        double impactPercent = 90)
+    {
+        _missingIndexes.Add(new MissingIndex(
+            Dbo(table), equality, inequality ?? [], includes ?? [], seeks, AverageTotalUserCost: 5.9, impactPercent));
+        return this;
+    }
+
     public DatabaseSnapshot Build() =>
         new(
             "TestDb",
@@ -54,7 +68,7 @@ public sealed class SnapshotBuilder
             ServerStartTime: CollectedAt - _window,
             DatabaseCreatedAt: CollectedAt - _window - TimeSpan.FromDays(1),
             _indexes,
-            MissingIndexes: [],
+            _missingIndexes,
             _foreignKeys);
 
     public static QualifiedName Dbo(string table) => new("dbo", table);
