@@ -9,6 +9,7 @@ public sealed class ShopDatabaseFixture : IAsyncLifetime
     private const string ConnectionStringVariable = "SQLINDEXADVISOR_ConnectionStrings__Shop";
 
     private IReadOnlyList<IndexInfo>? _indexes;
+    private IReadOnlyList<MissingIndex>? _missingIndexes;
 
     public async ValueTask InitializeAsync()
     {
@@ -19,19 +20,22 @@ public sealed class ShopDatabaseFixture : IAsyncLifetime
         }
 
         await using var connection = new SqlConnection(connectionString);
-        _indexes = await new DatabaseCollector(connection).CollectIndexesAsync(TestContext.Current.CancellationToken);
+        var collector = new DatabaseCollector(connection);
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        _indexes = await collector.CollectIndexesAsync(cancellationToken);
+        _missingIndexes = await collector.CollectMissingIndexesAsync(cancellationToken);
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
-    public IReadOnlyList<IndexInfo> RequireIndexes()
-    {
-        if (_indexes is null)
-        {
-            Assert.Skip(
-                $"Set {ConnectionStringVariable} to a SqlIndexAdvisorShop database built with database/run-all.ps1.");
-        }
+    public IReadOnlyList<IndexInfo> RequireIndexes() => _indexes ?? SkipWithoutDatabase<IndexInfo>();
 
-        return _indexes;
+    public IReadOnlyList<MissingIndex> RequireMissingIndexes() => _missingIndexes ?? SkipWithoutDatabase<MissingIndex>();
+
+    private static IReadOnlyList<T> SkipWithoutDatabase<T>()
+    {
+        Assert.Skip($"Set {ConnectionStringVariable} to a SqlIndexAdvisorShop database built with database/run-all.ps1.");
+        return [];
     }
 }

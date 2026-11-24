@@ -29,7 +29,8 @@ var server = await connection.QuerySingleAsync<(string Version, string Edition, 
 Console.WriteLine($"Connected to {server.Database} on SQL Server {server.Version} ({server.Edition})");
 Console.WriteLine();
 
-var indexes = await new DatabaseCollector(connection).CollectIndexesAsync();
+var collector = new DatabaseCollector(connection);
+var indexes = await collector.CollectIndexesAsync();
 
 Console.WriteLine($"{"Index",-50} {"Keys",-28} {"Reads",8} {"Writes",10}");
 foreach (var index in indexes)
@@ -37,4 +38,16 @@ foreach (var index in indexes)
     var name = $"{index.Table}.{SqlIdentifier.Quote(index.Name)}";
     var keys = string.Join(", ", index.KeyColumns.Select(key => key.IsDescending ? $"{key.Name} DESC" : key.Name));
     Console.WriteLine($"{name,-50} {keys,-28} {index.Usage.TotalReads,8:N0} {index.Usage.LeafWrites,10:N0}");
+}
+
+var missingIndexes = await collector.CollectMissingIndexesAsync();
+
+Console.WriteLine();
+Console.WriteLine($"{"Missing index on",-24} {"Equality",-16} {"Inequality",-16} {"Include",-12} {"Seeks",6} {"Impact",7}");
+foreach (var suggestion in missingIndexes)
+{
+    Console.WriteLine(
+        $"{suggestion.Table,-24} {string.Join(", ", suggestion.EqualityColumns),-16} " +
+        $"{string.Join(", ", suggestion.InequalityColumns),-16} {string.Join(", ", suggestion.IncludedColumns),-12} " +
+        $"{suggestion.UserSeeks,6:N0} {suggestion.AverageUserImpactPercent,6:N1}%");
 }

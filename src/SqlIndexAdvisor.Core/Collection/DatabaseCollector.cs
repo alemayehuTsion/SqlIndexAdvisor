@@ -20,6 +20,35 @@ public sealed class DatabaseCollector(DbConnection connection)
             .ToList();
     }
 
+    public async Task<IReadOnlyList<MissingIndex>> CollectMissingIndexesAsync(CancellationToken cancellationToken = default)
+    {
+        var suggestions = await connection.QueryAsync<MissingIndexRow>(
+            new CommandDefinition(MissingIndexesSql, cancellationToken: cancellationToken));
+
+        var columnsBySuggestion = (await connection.QueryAsync<MissingIndexColumnRow>(
+                new CommandDefinition(MissingIndexColumnsSql, cancellationToken: cancellationToken)))
+            .ToLookup(column => column.IndexHandle);
+
+        return suggestions
+            .Select(suggestion => ToMissingIndex(suggestion, columnsBySuggestion[suggestion.IndexHandle]))
+            .ToList();
+    }
+
+    private static MissingIndex ToMissingIndex(MissingIndexRow suggestion, IEnumerable<MissingIndexColumnRow> columns)
+    {
+        IReadOnlyList<string> ColumnsUsedAs(string usage) =>
+            columns.Where(column => column.ColumnUsage == usage).Select(column => column.ColumnName).ToList();
+
+        return new(
+            new QualifiedName(suggestion.SchemaName, suggestion.TableName),
+            ColumnsUsedAs("EQUALITY"),
+            ColumnsUsedAs("INEQUALITY"),
+            ColumnsUsedAs("INCLUDE"),
+            suggestion.UserSeeks,
+            suggestion.AverageTotalUserCost,
+            suggestion.AverageUserImpactPercent);
+    }
+
     private static IndexInfo ToIndexInfo(IndexRow index, IEnumerable<IndexColumnRow> columns) =>
         new(
             new QualifiedName(index.SchemaName, index.TableName),
@@ -62,6 +91,19 @@ public sealed class DatabaseCollector(DbConnection connection)
         int KeyOrdinal,
         bool IsDescending,
         bool IsIncluded);
+
+    private sealed record MissingIndexRow(
+        int IndexHandle,
+        string SchemaName,
+        string TableName,
+        long UserSeeks,
+        double AverageTotalUserCost,
+        double AverageUserImpactPercent);
+
+    private sealed record MissingIndexColumnRow(
+        int IndexHandle,
+        string ColumnName,
+        string ColumnUsage);
 
     // Rowstore indexes only (type 1 clustered, 2 nonclustered): heaps, columnstore, XML and spatial indexes are out
     // of scope. The usage DMV is LEFT JOINed because an index never touched since restart has no row there.
@@ -115,5 +157,34 @@ public sealed class DatabaseCollector(DbConnection connection)
           AND t.is_ms_shipped = 0
           AND (ic.key_ordinal > 0 OR ic.is_included_column = 1)
         ORDER BY ic.object_id, ic.index_id, ic.key_ordinal;
+        """;
+
+    // The missing-index DMVs are server-wide, so both queries filter on the current database.
+    private const string MissingIndexesSql =
+        """
+        SELECT
+            d.index_handle                      AS IndexHandle,
+            OBJECT_SCHEMA_NAME(d.object_id)     AS SchemaName,
+            OBJECT_NAME(d.object_id)            AS TableName,
+            s.user_seeks                        AS UserSeeks,
+            s.avg_total_user_cost               AS AverageTotalUserCost,
+            s.avg_user_impact                   AS AverageUserImpactPercent
+        FROM sys.dm_db_missing_index_details d
+        JOIN sys.dm_db_missing_index_groups g ON g.index_handle = d.index_handle
+        JOIN sys.dm_db_missing_index_group_stats s ON s.group_handle = g.index_group_handle
+        WHERE d.database_id = DB_ID()
+        ORDER BY d.index_handle;
+        """;
+
+    private const string MissingIndexColumnsSql =
+        """
+        SELECT
+            d.index_handle      AS IndexHandle,
+            c.column_name       AS ColumnName,
+            c.column_usage      AS ColumnUsage
+        FROM sys.dm_db_missing_index_details d
+        CROSS APPLY sys.dm_db_missing_index_columns(d.index_handle) c
+        WHERE d.database_id = DB_ID()
+        ORDER BY d.index_handle, c.column_id;
         """;
 }

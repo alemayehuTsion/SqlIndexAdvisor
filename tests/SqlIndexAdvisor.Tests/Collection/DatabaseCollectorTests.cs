@@ -52,6 +52,26 @@ public class DatabaseCollectorTests(ShopDatabaseFixture database) : IClassFixtur
         Assert.Equal(["OrderId", "LineNumber"], index.KeyColumns.Select(column => column.Name));
     }
 
+    [Fact]
+    public void SlowQuery_ProducesMissingIndexOnCustomerIdAndOrderDate()
+    {
+        var suggestions = database.RequireMissingIndexes()
+            .Where(suggestion => suggestion.Table == new QualifiedName("dbo", "Orders"))
+            .ToList();
+
+        if (suggestions.Count == 0)
+        {
+            Assert.Skip("No missing-index suggestions, so SQL Server restarted after the slow query ran. " +
+                        "Rebuild with database/run-all.ps1 -Recreate.");
+        }
+
+        var suggestion = Assert.Single(suggestions);
+        Assert.Equal(["CustomerId"], suggestion.EqualityColumns);
+        Assert.Equal(["OrderDate"], suggestion.InequalityColumns);
+        Assert.Empty(suggestion.IncludedColumns);
+        Assert.True(suggestion.UserSeeks >= 1);
+    }
+
     private IndexInfo FindIndex(string table, string name) =>
         database.RequireIndexes().Single(index => index.Table == new QualifiedName("dbo", table) && index.Name == name);
 }
