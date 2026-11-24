@@ -30,9 +30,10 @@ Console.WriteLine($"Connected to {server.Database} on SQL Server {server.Version
 
 var snapshot = await new DatabaseCollector(connection).CollectSnapshotAsync();
 
+var windowStart = snapshot.StatisticsSince == snapshot.ServerStartTime ? "server start" : "database creation";
 Console.WriteLine(
     $"Statistics cover {snapshot.StatisticsWindow.TotalHours:N1} hours " +
-    $"(server started {snapshot.ServerStartTime:yyyy-MM-dd HH:mm zzz})");
+    $"(since {windowStart}, {snapshot.StatisticsSince:yyyy-MM-dd HH:mm zzz})");
 Console.WriteLine();
 
 Console.WriteLine($"{"Index",-50} {"Keys",-28} {"Reads",8} {"Writes",10}");

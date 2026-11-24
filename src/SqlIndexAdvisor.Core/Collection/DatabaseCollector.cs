@@ -32,6 +32,7 @@ public sealed class DatabaseCollector(DbConnection connection)
                 context.DatabaseName,
                 context.CollectedAt,
                 context.ServerStartTime,
+                context.DatabaseCreatedAt,
                 await CollectIndexesAsync(cancellationToken),
                 await CollectMissingIndexesAsync(cancellationToken),
                 await CollectForeignKeysAsync(cancellationToken));
@@ -165,7 +166,8 @@ public sealed class DatabaseCollector(DbConnection connection)
     private sealed record ServerContextRow(
         string DatabaseName,
         DateTimeOffset CollectedAt,
-        DateTimeOffset ServerStartTime);
+        DateTimeOffset ServerStartTime,
+        DateTimeOffset DatabaseCreatedAt);
 
     private sealed record ForeignKeyRow(
         int ForeignKeyId,

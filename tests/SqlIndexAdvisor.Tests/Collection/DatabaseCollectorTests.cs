@@ -93,6 +93,8 @@ public class DatabaseCollectorTests(ShopDatabaseFixture database) : IClassFixtur
 
         Assert.Equal("SqlIndexAdvisorShop", snapshot.DatabaseName);
         Assert.True(snapshot.StatisticsWindow > TimeSpan.Zero);
+        Assert.True(snapshot.StatisticsSince >= snapshot.DatabaseCreatedAt);
+        Assert.True(snapshot.StatisticsSince >= snapshot.ServerStartTime);
         Assert.InRange(DateTimeOffset.UtcNow - snapshot.CollectedAt, TimeSpan.FromMinutes(-5), TimeSpan.FromMinutes(5));
     }
 

@@ -20,14 +20,25 @@ public class CollectionModelTests
         Assert.Equal(6, usage.TotalReads);
     }
 
+    private static readonly DateTimeOffset Earlier = new(2026, 11, 1, 8, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset Later = Earlier.AddDays(2);
+    private static readonly DateTimeOffset Collected = Later.AddHours(5);
+
     [Fact]
-    public void DatabaseSnapshot_StatisticsWindow_IsTimeSinceServerStart()
+    public void DatabaseSnapshot_StatisticsWindow_StartsAtServerStartWhenDatabaseIsOlder()
     {
-        var started = new DateTimeOffset(2026, 11, 1, 8, 0, 0, TimeSpan.Zero);
-        var collected = started.AddDays(3).AddHours(2);
+        var snapshot = new DatabaseSnapshot("Shop", Collected, ServerStartTime: Later, DatabaseCreatedAt: Earlier, [], [], []);
 
-        var snapshot = new DatabaseSnapshot("Shop", collected, started, [], [], []);
+        Assert.Equal(Later, snapshot.StatisticsSince);
+        Assert.Equal(TimeSpan.FromHours(5), snapshot.StatisticsWindow);
+    }
 
-        Assert.Equal(TimeSpan.FromHours(74), snapshot.StatisticsWindow);
+    [Fact]
+    public void DatabaseSnapshot_StatisticsWindow_StartsAtDatabaseCreationWhenServerIsOlder()
+    {
+        var snapshot = new DatabaseSnapshot("Shop", Collected, ServerStartTime: Earlier, DatabaseCreatedAt: Later, [], [], []);
+
+        Assert.Equal(Later, snapshot.StatisticsSince);
+        Assert.Equal(TimeSpan.FromHours(5), snapshot.StatisticsWindow);
     }
 }
