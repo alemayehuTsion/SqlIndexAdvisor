@@ -7,6 +7,7 @@ public sealed class SnapshotBuilder
     private static readonly DateTimeOffset CollectedAt = new(2026, 11, 1, 12, 0, 0, TimeSpan.Zero);
 
     private readonly List<IndexInfo> _indexes = [];
+    private readonly List<ForeignKey> _foreignKeys = [];
     private TimeSpan _window = TimeSpan.FromDays(30);
 
     public static SnapshotBuilder Snapshot() => new();
@@ -40,6 +41,12 @@ public sealed class SnapshotBuilder
         return this;
     }
 
+    public SnapshotBuilder WithForeignKey(string name, string table, string[] columns, string referencedTable)
+    {
+        _foreignKeys.Add(new ForeignKey(name, Dbo(table), columns, Dbo(referencedTable)));
+        return this;
+    }
+
     public DatabaseSnapshot Build() =>
         new(
             "TestDb",
@@ -48,7 +55,7 @@ public sealed class SnapshotBuilder
             DatabaseCreatedAt: CollectedAt - _window - TimeSpan.FromDays(1),
             _indexes,
             MissingIndexes: [],
-            ForeignKeys: []);
+            _foreignKeys);
 
     public static QualifiedName Dbo(string table) => new("dbo", table);
 
