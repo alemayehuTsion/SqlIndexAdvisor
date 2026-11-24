@@ -27,24 +27,25 @@ var server = await connection.QuerySingleAsync<(string Version, string Edition, 
     """);
 
 Console.WriteLine($"Connected to {server.Database} on SQL Server {server.Version} ({server.Edition})");
+
+var snapshot = await new DatabaseCollector(connection).CollectSnapshotAsync();
+
+Console.WriteLine(
+    $"Statistics cover {snapshot.StatisticsWindow.TotalHours:N1} hours " +
+    $"(server started {snapshot.ServerStartTime:yyyy-MM-dd HH:mm zzz})");
 Console.WriteLine();
 
-var collector = new DatabaseCollector(connection);
-var indexes = await collector.CollectIndexesAsync();
-
 Console.WriteLine($"{"Index",-50} {"Keys",-28} {"Reads",8} {"Writes",10}");
-foreach (var index in indexes)
+foreach (var index in snapshot.Indexes)
 {
     var name = $"{index.Table}.{SqlIdentifier.Quote(index.Name)}";
     var keys = string.Join(", ", index.KeyColumns.Select(key => key.IsDescending ? $"{key.Name} DESC" : key.Name));
     Console.WriteLine($"{name,-50} {keys,-28} {index.Usage.TotalReads,8:N0} {index.Usage.LeafWrites,10:N0}");
 }
 
-var missingIndexes = await collector.CollectMissingIndexesAsync();
-
 Console.WriteLine();
 Console.WriteLine($"{"Missing index on",-24} {"Equality",-16} {"Inequality",-16} {"Include",-12} {"Seeks",6} {"Impact",7}");
-foreach (var suggestion in missingIndexes)
+foreach (var suggestion in snapshot.MissingIndexes)
 {
     Console.WriteLine(
         $"{suggestion.Table,-24} {string.Join(", ", suggestion.EqualityColumns),-16} " +
@@ -52,11 +53,9 @@ foreach (var suggestion in missingIndexes)
         $"{suggestion.UserSeeks,6:N0} {suggestion.AverageUserImpactPercent,6:N1}%");
 }
 
-var foreignKeys = await collector.CollectForeignKeysAsync();
-
 Console.WriteLine();
 Console.WriteLine($"{"Foreign key",-24} {"Table",-20} {"Columns",-12} References");
-foreach (var foreignKey in foreignKeys)
+foreach (var foreignKey in snapshot.ForeignKeys)
 {
     Console.WriteLine(
         $"{foreignKey.Name,-24} {foreignKey.Table,-20} {string.Join(", ", foreignKey.Columns),-12} {foreignKey.ReferencedTable}");

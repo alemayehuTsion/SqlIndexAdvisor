@@ -86,6 +86,16 @@ public class DatabaseCollectorTests(ShopDatabaseFixture database) : IClassFixtur
             foreignKeys.Select(fk => $"{fk.Name}: {fk.Table} ({string.Join(", ", fk.Columns)}) -> {fk.ReferencedTable}"));
     }
 
+    [Fact]
+    public void Snapshot_RecordsDatabaseAndServerClock()
+    {
+        var snapshot = database.RequireSnapshot();
+
+        Assert.Equal("SqlIndexAdvisorShop", snapshot.DatabaseName);
+        Assert.True(snapshot.StatisticsWindow > TimeSpan.Zero);
+        Assert.InRange(DateTimeOffset.UtcNow - snapshot.CollectedAt, TimeSpan.FromMinutes(-5), TimeSpan.FromMinutes(5));
+    }
+
     private IndexInfo FindIndex(string table, string name) =>
         database.RequireIndexes().Single(index => index.Table == new QualifiedName("dbo", table) && index.Name == name);
 }

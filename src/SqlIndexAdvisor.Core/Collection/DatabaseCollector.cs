@@ -1,3 +1,4 @@
+using System.Data;
 using System.Data.Common;
 
 using Dapper;
@@ -6,7 +7,37 @@ namespace SqlIndexAdvisor.Core.Collection;
 
 public sealed class DatabaseCollector(DbConnection connection)
 {
-    public async Task<IReadOnlyList<IndexInfo>> CollectIndexesAsync(CancellationToken cancellationToken = default)
+    public async Task<DatabaseSnapshot> CollectSnapshotAsync(CancellationToken cancellationToken = default)
+    {
+        var openedHere = connection.State == ConnectionState.Closed;
+        if (openedHere)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        try
+        {
+            var context = await connection.QuerySingleAsync<ServerContextRow>(
+                new CommandDefinition(ServerContextSql, cancellationToken: cancellationToken));
+
+            return new DatabaseSnapshot(
+                context.DatabaseName,
+                context.CollectedAt,
+                context.ServerStartTime,
+                await CollectIndexesAsync(cancellationToken),
+                await CollectMissingIndexesAsync(cancellationToken),
+                await CollectForeignKeysAsync(cancellationToken));
+        }
+        finally
+        {
+            if (openedHere)
+            {
+                await connection.CloseAsync();
+            }
+        }
+    }
+
+    private async Task<IReadOnlyList<IndexInfo>> CollectIndexesAsync(CancellationToken cancellationToken)
     {
         var indexes = await connection.QueryAsync<IndexRow>(
             new CommandDefinition(IndexesSql, cancellationToken: cancellationToken));
@@ -20,7 +51,7 @@ public sealed class DatabaseCollector(DbConnection connection)
             .ToList();
     }
 
-    public async Task<IReadOnlyList<MissingIndex>> CollectMissingIndexesAsync(CancellationToken cancellationToken = default)
+    private async Task<IReadOnlyList<MissingIndex>> CollectMissingIndexesAsync(CancellationToken cancellationToken)
     {
         var suggestions = await connection.QueryAsync<MissingIndexRow>(
             new CommandDefinition(MissingIndexesSql, cancellationToken: cancellationToken));
@@ -34,7 +65,7 @@ public sealed class DatabaseCollector(DbConnection connection)
             .ToList();
     }
 
-    public async Task<IReadOnlyList<ForeignKey>> CollectForeignKeysAsync(CancellationToken cancellationToken = default)
+    private async Task<IReadOnlyList<ForeignKey>> CollectForeignKeysAsync(CancellationToken cancellationToken)
     {
         var foreignKeys = await connection.QueryAsync<ForeignKeyRow>(
             new CommandDefinition(ForeignKeysSql, cancellationToken: cancellationToken));
@@ -123,6 +154,11 @@ public sealed class DatabaseCollector(DbConnection connection)
         string ColumnName,
         string ColumnUsage);
 
+    private sealed record ServerContextRow(
+        string DatabaseName,
+        DateTimeOffset CollectedAt,
+        DateTimeOffset ServerStartTime);
+
     private sealed record ForeignKeyRow(
         int ForeignKeyId,
         string Name,
@@ -134,6 +170,18 @@ public sealed class DatabaseCollector(DbConnection connection)
     private sealed record ForeignKeyColumnRow(
         int ForeignKeyId,
         string ColumnName);
+
+    // Both timestamps come from the server's clock so the statistics window is not skewed by client clock drift.
+    // sqlserver_start_time is local server time without an offset; the current offset is applied, which is off by
+    // the DST shift if the server started before a daylight-saving change.
+    private const string ServerContextSql =
+        """
+        SELECT
+            DB_NAME()                                                                       AS DatabaseName,
+            SYSDATETIMEOFFSET()                                                             AS CollectedAt,
+            TODATETIMEOFFSET(sqlserver_start_time, DATEPART(TZOFFSET, SYSDATETIMEOFFSET())) AS ServerStartTime
+        FROM sys.dm_os_sys_info;
+        """;
 
     // Rowstore indexes only (type 1 clustered, 2 nonclustered): heaps, columnstore, XML and spatial indexes are out
     // of scope. The usage DMV is LEFT JOINed because an index never touched since restart has no row there.

@@ -8,9 +8,7 @@ public sealed class ShopDatabaseFixture : IAsyncLifetime
 {
     private const string ConnectionStringVariable = "SQLINDEXADVISOR_ConnectionStrings__Shop";
 
-    private IReadOnlyList<IndexInfo>? _indexes;
-    private IReadOnlyList<MissingIndex>? _missingIndexes;
-    private IReadOnlyList<ForeignKey>? _foreignKeys;
+    private DatabaseSnapshot? _snapshot;
 
     public async ValueTask InitializeAsync()
     {
@@ -21,25 +19,24 @@ public sealed class ShopDatabaseFixture : IAsyncLifetime
         }
 
         await using var connection = new SqlConnection(connectionString);
-        var collector = new DatabaseCollector(connection);
-        var cancellationToken = TestContext.Current.CancellationToken;
-
-        _indexes = await collector.CollectIndexesAsync(cancellationToken);
-        _missingIndexes = await collector.CollectMissingIndexesAsync(cancellationToken);
-        _foreignKeys = await collector.CollectForeignKeysAsync(cancellationToken);
+        _snapshot = await new DatabaseCollector(connection).CollectSnapshotAsync(TestContext.Current.CancellationToken);
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
-    public IReadOnlyList<IndexInfo> RequireIndexes() => _indexes ?? SkipWithoutDatabase<IndexInfo>();
-
-    public IReadOnlyList<MissingIndex> RequireMissingIndexes() => _missingIndexes ?? SkipWithoutDatabase<MissingIndex>();
-
-    public IReadOnlyList<ForeignKey> RequireForeignKeys() => _foreignKeys ?? SkipWithoutDatabase<ForeignKey>();
-
-    private static IReadOnlyList<T> SkipWithoutDatabase<T>()
+    public DatabaseSnapshot RequireSnapshot()
     {
-        Assert.Skip($"Set {ConnectionStringVariable} to a SqlIndexAdvisorShop database built with database/run-all.ps1.");
-        return [];
+        if (_snapshot is null)
+        {
+            Assert.Skip($"Set {ConnectionStringVariable} to a SqlIndexAdvisorShop database built with database/run-all.ps1.");
+        }
+
+        return _snapshot;
     }
+
+    public IReadOnlyList<IndexInfo> RequireIndexes() => RequireSnapshot().Indexes;
+
+    public IReadOnlyList<MissingIndex> RequireMissingIndexes() => RequireSnapshot().MissingIndexes;
+
+    public IReadOnlyList<ForeignKey> RequireForeignKeys() => RequireSnapshot().ForeignKeys;
 }
