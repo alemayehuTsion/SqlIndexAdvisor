@@ -72,6 +72,20 @@ public class DatabaseCollectorTests(ShopDatabaseFixture database) : IClassFixtur
         Assert.True(suggestion.UserSeeks >= 1);
     }
 
+    [Fact]
+    public void ForeignKeys_AreCollectedWithColumnsAndReferencedTables()
+    {
+        var foreignKeys = database.RequireForeignKeys();
+
+        Assert.Equal(
+            [
+                "FK_OrderItems_Orders: [dbo].[OrderItems] (OrderId) -> [dbo].[Orders]",
+                "FK_OrderItems_Products: [dbo].[OrderItems] (ProductId) -> [dbo].[Products]",
+                "FK_Orders_Customers: [dbo].[Orders] (CustomerId) -> [dbo].[Customers]",
+            ],
+            foreignKeys.Select(fk => $"{fk.Name}: {fk.Table} ({string.Join(", ", fk.Columns)}) -> {fk.ReferencedTable}"));
+    }
+
     private IndexInfo FindIndex(string table, string name) =>
         database.RequireIndexes().Single(index => index.Table == new QualifiedName("dbo", table) && index.Name == name);
 }

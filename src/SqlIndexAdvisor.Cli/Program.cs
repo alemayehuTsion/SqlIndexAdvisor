@@ -51,3 +51,13 @@ foreach (var suggestion in missingIndexes)
         $"{string.Join(", ", suggestion.InequalityColumns),-16} {string.Join(", ", suggestion.IncludedColumns),-12} " +
         $"{suggestion.UserSeeks,6:N0} {suggestion.AverageUserImpactPercent,6:N1}%");
 }
+
+var foreignKeys = await collector.CollectForeignKeysAsync();
+
+Console.WriteLine();
+Console.WriteLine($"{"Foreign key",-24} {"Table",-20} {"Columns",-12} References");
+foreach (var foreignKey in foreignKeys)
+{
+    Console.WriteLine(
+        $"{foreignKey.Name,-24} {foreignKey.Table,-20} {string.Join(", ", foreignKey.Columns),-12} {foreignKey.ReferencedTable}");
+}

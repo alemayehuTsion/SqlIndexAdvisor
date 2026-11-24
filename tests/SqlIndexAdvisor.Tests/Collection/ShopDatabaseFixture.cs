@@ -10,6 +10,7 @@ public sealed class ShopDatabaseFixture : IAsyncLifetime
 
     private IReadOnlyList<IndexInfo>? _indexes;
     private IReadOnlyList<MissingIndex>? _missingIndexes;
+    private IReadOnlyList<ForeignKey>? _foreignKeys;
 
     public async ValueTask InitializeAsync()
     {
@@ -25,6 +26,7 @@ public sealed class ShopDatabaseFixture : IAsyncLifetime
 
         _indexes = await collector.CollectIndexesAsync(cancellationToken);
         _missingIndexes = await collector.CollectMissingIndexesAsync(cancellationToken);
+        _foreignKeys = await collector.CollectForeignKeysAsync(cancellationToken);
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
@@ -32,6 +34,8 @@ public sealed class ShopDatabaseFixture : IAsyncLifetime
     public IReadOnlyList<IndexInfo> RequireIndexes() => _indexes ?? SkipWithoutDatabase<IndexInfo>();
 
     public IReadOnlyList<MissingIndex> RequireMissingIndexes() => _missingIndexes ?? SkipWithoutDatabase<MissingIndex>();
+
+    public IReadOnlyList<ForeignKey> RequireForeignKeys() => _foreignKeys ?? SkipWithoutDatabase<ForeignKey>();
 
     private static IReadOnlyList<T> SkipWithoutDatabase<T>()
     {

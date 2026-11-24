@@ -34,6 +34,24 @@ public sealed class DatabaseCollector(DbConnection connection)
             .ToList();
     }
 
+    public async Task<IReadOnlyList<ForeignKey>> CollectForeignKeysAsync(CancellationToken cancellationToken = default)
+    {
+        var foreignKeys = await connection.QueryAsync<ForeignKeyRow>(
+            new CommandDefinition(ForeignKeysSql, cancellationToken: cancellationToken));
+
+        var columnsByForeignKey = (await connection.QueryAsync<ForeignKeyColumnRow>(
+                new CommandDefinition(ForeignKeyColumnsSql, cancellationToken: cancellationToken)))
+            .ToLookup(column => column.ForeignKeyId);
+
+        return foreignKeys
+            .Select(foreignKey => new ForeignKey(
+                foreignKey.Name,
+                new QualifiedName(foreignKey.SchemaName, foreignKey.TableName),
+                columnsByForeignKey[foreignKey.ForeignKeyId].Select(column => column.ColumnName).ToList(),
+                new QualifiedName(foreignKey.ReferencedSchemaName, foreignKey.ReferencedTableName)))
+            .ToList();
+    }
+
     private static MissingIndex ToMissingIndex(MissingIndexRow suggestion, IEnumerable<MissingIndexColumnRow> columns)
     {
         IReadOnlyList<string> ColumnsUsedAs(string usage) =>
@@ -104,6 +122,18 @@ public sealed class DatabaseCollector(DbConnection connection)
         int IndexHandle,
         string ColumnName,
         string ColumnUsage);
+
+    private sealed record ForeignKeyRow(
+        int ForeignKeyId,
+        string Name,
+        string SchemaName,
+        string TableName,
+        string ReferencedSchemaName,
+        string ReferencedTableName);
+
+    private sealed record ForeignKeyColumnRow(
+        int ForeignKeyId,
+        string ColumnName);
 
     // Rowstore indexes only (type 1 clustered, 2 nonclustered): heaps, columnstore, XML and spatial indexes are out
     // of scope. The usage DMV is LEFT JOINed because an index never touched since restart has no row there.
@@ -186,5 +216,29 @@ public sealed class DatabaseCollector(DbConnection connection)
         CROSS APPLY sys.dm_db_missing_index_columns(d.index_handle) c
         WHERE d.database_id = DB_ID()
         ORDER BY d.index_handle, c.column_id;
+        """;
+
+    private const string ForeignKeysSql =
+        """
+        SELECT
+            fk.object_id                                    AS ForeignKeyId,
+            fk.name                                         AS Name,
+            OBJECT_SCHEMA_NAME(fk.parent_object_id)         AS SchemaName,
+            OBJECT_NAME(fk.parent_object_id)                AS TableName,
+            OBJECT_SCHEMA_NAME(fk.referenced_object_id)     AS ReferencedSchemaName,
+            OBJECT_NAME(fk.referenced_object_id)            AS ReferencedTableName
+        FROM sys.foreign_keys fk
+        WHERE fk.is_ms_shipped = 0
+        ORDER BY SchemaName, TableName, Name;
+        """;
+
+    private const string ForeignKeyColumnsSql =
+        """
+        SELECT
+            fkc.constraint_object_id    AS ForeignKeyId,
+            c.name                      AS ColumnName
+        FROM sys.foreign_key_columns fkc
+        JOIN sys.columns c ON c.object_id = fkc.parent_object_id AND c.column_id = fkc.parent_column_id
+        ORDER BY fkc.constraint_object_id, fkc.constraint_column_id;
         """;
 }
