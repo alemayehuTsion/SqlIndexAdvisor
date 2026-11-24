@@ -11,4 +11,8 @@
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.1.2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Collection\Sql\*.sql" LogicalName="Sql.%(Filename)%(Extension)" />
+  </ItemGroup>
+
 </Project>
