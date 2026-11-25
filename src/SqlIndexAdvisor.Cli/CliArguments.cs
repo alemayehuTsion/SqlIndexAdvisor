@@ -6,7 +6,7 @@ namespace SqlIndexAdvisor.Cli;
 
 internal sealed record CliArguments(RuleOptions RuleOptions, string? AiProvider)
 {
-    public const string Usage = "Options: --min-window-hours <n>, --min-seeks <n>, --ai <None|Anthropic>";
+    public const string Usage = "Options: --min-window-hours <n>, --min-seeks <n>, --ai <None|Anthropic|OpenAI|AzureOpenAI|Ollama>";
 
     public static CliArguments Parse(string[] arguments)
     {
