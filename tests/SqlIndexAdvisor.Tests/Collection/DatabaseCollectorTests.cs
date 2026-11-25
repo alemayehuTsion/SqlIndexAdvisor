@@ -1,4 +1,5 @@
 using SqlIndexAdvisor.Core.Collection;
+using SqlIndexAdvisor.Core.Rules;
 
 namespace SqlIndexAdvisor.Tests.Collection;
 
@@ -96,6 +97,38 @@ public class DatabaseCollectorTests(ShopDatabaseFixture database) : IClassFixtur
         Assert.True(snapshot.StatisticsSince >= snapshot.DatabaseCreatedAt);
         Assert.True(snapshot.StatisticsSince >= snapshot.ServerStartTime);
         Assert.InRange(DateTimeOffset.UtcNow - snapshot.CollectedAt, TimeSpan.FromMinutes(-5), TimeSpan.FromMinutes(5));
+    }
+
+    [Fact]
+    public void RulesEngine_FindsEveryProblemPlantedInTheShopDatabase()
+    {
+        var snapshot = database.RequireSnapshot();
+        if (FindIndex("Orders", "IX_Orders_Status").Usage.LeafWrites == 0)
+        {
+            Assert.Skip("Usage counters are empty, so SQL Server restarted after the database was built. " +
+                        "Rebuild it with database/run-all.ps1 -Recreate.");
+        }
+
+        var demoOptions = new RuleOptions { MinimumStatisticsWindow = TimeSpan.Zero, MinimumMissingIndexSeeks = 1 };
+        var findings = RulesEngine.Default.Evaluate(snapshot, demoOptions);
+
+        Assert.Equal(
+            [
+                "create [dbo].[OrderItems].IX_OrderItems_ProductId",
+                "create [dbo].[Orders].IX_Orders_CustomerId_OrderDate",
+                "drop [dbo].[Customers].IX_Customers_Email",
+                "drop [dbo].[Customers].IX_Customers_EmailLookup",
+                "drop [dbo].[Orders].IX_Orders_Status",
+            ],
+            findings
+                .Select(finding => finding.ProposedChange)
+                .OfType<IndexChange>()
+                .Select(change => $"{(change is CreateIndex ? "create" : "drop")} {change.Table}.{change.IndexName}")
+                .Order(StringComparer.Ordinal));
+
+        var customerForeignKey = Assert.Single(findings, finding =>
+            finding.Evidence.Contains(new Evidence("foreignKey", "FK_Orders_Customers")));
+        Assert.Contains(new Evidence("resolvedBy", "IX_Orders_CustomerId_OrderDate"), customerForeignKey.Evidence);
     }
 
     private IndexInfo FindIndex(string table, string name) =>

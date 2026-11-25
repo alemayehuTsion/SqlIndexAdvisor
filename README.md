@@ -26,7 +26,7 @@ All data in this repository is synthetic.
 | 0 | Solution, global.json, .gitignore, git init, projects, first test | Done |
 | 1 | Synthetic database + slow query | Done |
 | 2 | Collector (DMVs, Dapper) | Done |
-| 3 | Rules engine | |
+| 3 | Rules engine | Done |
 | 4 | Safety validator | |
 | 5 | AI advisor (structured JSON output) | |
 | 6 | Approval CLI + audit log | |

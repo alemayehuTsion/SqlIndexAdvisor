@@ -13,7 +13,7 @@ public sealed class UnindexedForeignKeyRule : IIndexRule
 
     private static bool HasSupportingIndex(DatabaseSnapshot snapshot, ForeignKey foreignKey) =>
         snapshot.Indexes.Any(index =>
-            index.Table == foreignKey.Table && IndexCoverage.LeadsWith(index, [.. foreignKey.Columns]));
+            index.Table == foreignKey.Table && IndexCoverage.LeadsWith(index.KeyColumns, [.. foreignKey.Columns]));
 
     private Finding UnindexedFinding(DatabaseSnapshot snapshot, ForeignKey foreignKey)
     {

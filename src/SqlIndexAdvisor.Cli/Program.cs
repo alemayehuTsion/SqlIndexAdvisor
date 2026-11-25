@@ -1,10 +1,14 @@
+using System.Globalization;
+
 using Dapper;
 
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 
-using SqlIndexAdvisor.Core;
 using SqlIndexAdvisor.Core.Collection;
+using SqlIndexAdvisor.Core.Rules;
+
+var options = ParseRuleOptions(args);
 
 var configuration = new ConfigurationBuilder()
     .AddUserSecrets<Program>()
@@ -19,45 +23,73 @@ var connectionString = configuration.GetConnectionString("Shop")
 
 await using var connection = new SqlConnection(connectionString);
 
-var server = await connection.QuerySingleAsync<(string Version, string Edition, string Database)>(
+var server = await connection.QuerySingleAsync<(string Version, string Edition)>(
     """
     SELECT CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(128)),
-           CAST(SERVERPROPERTY('Edition') AS nvarchar(128)),
-           DB_NAME();
+           CAST(SERVERPROPERTY('Edition') AS nvarchar(128));
     """);
-
-Console.WriteLine($"Connected to {server.Database} on SQL Server {server.Version} ({server.Edition})");
 
 var snapshot = await new DatabaseCollector(connection).CollectSnapshotAsync();
 
 var windowStart = snapshot.StatisticsSince == snapshot.ServerStartTime ? "server start" : "database creation";
+Console.WriteLine($"{snapshot.DatabaseName} on SQL Server {server.Version} ({server.Edition})");
+Console.WriteLine(
+    $"Collected {snapshot.Indexes.Count} indexes, {snapshot.MissingIndexes.Count} missing-index suggestions, " +
+    $"{snapshot.ForeignKeys.Count} foreign keys");
 Console.WriteLine(
     $"Statistics cover {snapshot.StatisticsWindow.TotalHours:N1} hours " +
     $"(since {windowStart}, {snapshot.StatisticsSince:yyyy-MM-dd HH:mm zzz})");
-Console.WriteLine();
 
-Console.WriteLine($"{"Index",-50} {"Keys",-28} {"Reads",8} {"Writes",10}");
-foreach (var index in snapshot.Indexes)
-{
-    var name = $"{index.Table}.{SqlIdentifier.Quote(index.Name)}";
-    var keys = string.Join(", ", index.KeyColumns.Select(key => key.IsDescending ? $"{key.Name} DESC" : key.Name));
-    Console.WriteLine($"{name,-50} {keys,-28} {index.Usage.TotalReads,8:N0} {index.Usage.LeafWrites,10:N0}");
-}
-
-Console.WriteLine();
-Console.WriteLine($"{"Missing index on",-24} {"Equality",-16} {"Inequality",-16} {"Include",-12} {"Seeks",6} {"Impact",7}");
-foreach (var suggestion in snapshot.MissingIndexes)
+if (options != new RuleOptions())
 {
     Console.WriteLine(
-        $"{suggestion.Table,-24} {string.Join(", ", suggestion.EqualityColumns),-16} " +
-        $"{string.Join(", ", suggestion.InequalityColumns),-16} {string.Join(", ", suggestion.IncludedColumns),-12} " +
-        $"{suggestion.UserSeeks,6:N0} {suggestion.AverageUserImpactPercent,6:N1}%");
+        $"Thresholds overridden: minimum window {options.MinimumStatisticsWindow.TotalHours:N1} hours, " +
+        $"minimum seeks {options.MinimumMissingIndexSeeks:N0}");
 }
 
+var findings = RulesEngine.Default.Evaluate(snapshot, options);
+
 Console.WriteLine();
-Console.WriteLine($"{"Foreign key",-24} {"Table",-20} {"Columns",-12} References");
-foreach (var foreignKey in snapshot.ForeignKeys)
+Console.WriteLine($"{findings.Count} findings, {findings.Count(finding => finding.ProposedChange is not null)} proposed changes:");
+foreach (var finding in findings)
 {
-    Console.WriteLine(
-        $"{foreignKey.Name,-24} {foreignKey.Table,-20} {string.Join(", ", foreignKey.Columns),-12} {foreignKey.ReferencedTable}");
+    Console.WriteLine();
+    Console.WriteLine($"[{finding.Severity}] {finding.RuleId} on {finding.Table}");
+    Console.WriteLine($"  {finding.Summary}");
+    if (finding.ProposedChange is not null)
+    {
+        Console.WriteLine($"  Proposes: {Describe(finding.ProposedChange)}");
+    }
 }
+
+static string Describe(IndexChange change) =>
+    change switch
+    {
+        CreateIndex create =>
+            $"create {create.IndexName} ({string.Join(", ", create.KeyColumns.Select(key => key.Name))})" +
+            (create.IncludedColumns.Count > 0 ? $" INCLUDE ({string.Join(", ", create.IncludedColumns)})" : ""),
+        DropIndex drop => $"drop {drop.IndexName}",
+        _ => throw new ArgumentOutOfRangeException(nameof(change), change, "Unknown index change."),
+    };
+
+static RuleOptions ParseRuleOptions(string[] arguments)
+{
+    var options = new RuleOptions();
+
+    for (var i = 0; i < arguments.Length; i++)
+    {
+        options = arguments[i] switch
+        {
+            "--min-window-hours" => options with { MinimumStatisticsWindow = TimeSpan.FromHours(ParseNumber(arguments, ++i)) },
+            "--min-seeks" => options with { MinimumMissingIndexSeeks = (long)ParseNumber(arguments, ++i) },
+            _ => throw new ArgumentException($"Unknown option '{arguments[i]}'. Use --min-window-hours <n> or --min-seeks <n>."),
+        };
+    }
+
+    return options;
+}
+
+static double ParseNumber(string[] arguments, int position) =>
+    position < arguments.Length && double.TryParse(arguments[position], CultureInfo.InvariantCulture, out var value) && value >= 0
+        ? value
+        : throw new ArgumentException($"Option '{arguments[position - 1]}' needs a non-negative number.");
