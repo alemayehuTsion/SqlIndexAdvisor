@@ -7,6 +7,14 @@ namespace SqlIndexAdvisor.Core.Advice;
 
 public sealed class AiAdvisor(IChatClient chatClient, TimeSpan? timeout = null)
 {
+    public const int MaxOutputTokens = 16_000;
+
+    private static ChatOptions CreateRequestOptions() => new()
+    {
+        ResponseFormat = ChatResponseFormat.Json,
+        MaxOutputTokens = MaxOutputTokens,
+    };
+
     private readonly TimeSpan _timeout = timeout ?? TimeSpan.FromMinutes(2);
 
     public async Task<AdviceResult> AdviseAsync(
@@ -31,8 +39,7 @@ public sealed class AiAdvisor(IChatClient chatClient, TimeSpan? timeout = null)
         ChatResponse response;
         try
         {
-            response = await chatClient.GetResponseAsync(
-                messages, new ChatOptions { ResponseFormat = ChatResponseFormat.Json }, timeoutSource.Token);
+            response = await chatClient.GetResponseAsync(messages, CreateRequestOptions(), timeoutSource.Token);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {

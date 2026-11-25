@@ -54,6 +54,7 @@ public class AiAdvisorTests
         Assert.Contains(Unused.Id, client.ReceivedMessages[1].Text);
         Assert.Contains("drop-unindexes-foreign-key", client.ReceivedMessages[1].Text);
         Assert.Same(ChatResponseFormat.Json, client.ReceivedOptions?.ResponseFormat);
+        Assert.Equal(AiAdvisor.MaxOutputTokens, client.ReceivedOptions?.MaxOutputTokens);
     }
 
     [Fact]

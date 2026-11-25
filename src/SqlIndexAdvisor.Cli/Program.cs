@@ -1,15 +1,16 @@
-using System.Globalization;
-
 using Dapper;
 
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 
+using SqlIndexAdvisor.Cli;
+using SqlIndexAdvisor.Core.Advice;
 using SqlIndexAdvisor.Core.Collection;
 using SqlIndexAdvisor.Core.Rules;
 using SqlIndexAdvisor.Core.Validation;
 
-var options = ParseRuleOptions(args);
+var arguments = CliArguments.Parse(args);
+var options = arguments.RuleOptions;
 
 var configuration = new ConfigurationBuilder()
     .AddUserSecrets<Program>()
@@ -21,6 +22,9 @@ var connectionString = configuration.GetConnectionString("Shop")
         "Connection string 'Shop' is not configured. Set it with " +
         "'dotnet user-secrets set ConnectionStrings:Shop <value>' or the environment variable " +
         "SQLINDEXADVISOR_ConnectionStrings__Shop.");
+
+var aiProvider = arguments.AiProvider ?? configuration["Ai:Provider"] ?? "None";
+using var chatClient = ChatClientFactory.Create(aiProvider, configuration);
 
 await using var connection = new SqlConnection(connectionString);
 
@@ -50,27 +54,48 @@ if (options != new RuleOptions())
 
 var findings = RulesEngine.Default.Evaluate(snapshot, options);
 var validations = new ProposalValidator().Validate(snapshot, findings);
-var validationByFinding = validations.ToDictionary(validation => validation.Finding);
+
+var advice = chatClient is null
+    ? DeterministicAdvice.For(findings, validations, [new AdviceIssue("ai-disabled", "AI provider is None.")])
+    : await new AiAdvisor(chatClient).AdviseAsync(findings, validations);
 
 Console.WriteLine();
 Console.WriteLine(
     $"{findings.Count} findings, {validations.Count} proposed changes, " +
-    $"{validations.Count(validation => validation.IsAccepted)} accepted by validation:");
-foreach (var finding in findings)
+    $"{validations.Count(validation => validation.IsAccepted)} accepted by validation");
+Console.WriteLine(advice.Source == AdviceSource.Model
+    ? $"Ranked and explained by {advice.ModelId ?? ChatClientFactory.ModelFor(aiProvider, configuration)} ({aiProvider})"
+    : $"Ranked deterministically: {string.Join(" ", advice.Issues.Select(issue => $"{issue.Code} - {issue.Message}"))}");
+
+foreach (var assessment in advice.Assessments)
 {
+    var finding = findings.Single(candidate => candidate.Id == assessment.FindingId);
+
     Console.WriteLine();
-    Console.WriteLine($"[{finding.Severity}] {finding.Id}");
+    Console.WriteLine($"#{assessment.Rank} [{finding.Severity}] {finding.Id}");
     Console.WriteLine($"  {finding.Summary}");
-    if (finding.ProposedChange is null)
+    if (finding.Evidence.Count > 0)
     {
-        continue;
+        Console.WriteLine($"  Evidence: {string.Join(", ", finding.Evidence.Select(evidence => $"{evidence.Name}={evidence.Value}"))}");
     }
 
-    var validation = validationByFinding[finding];
-    Console.WriteLine($"  Proposes: {Describe(finding.ProposedChange)} [{(validation.IsAccepted ? "accepted" : "REJECTED")}]");
-    foreach (var issue in validation.Issues)
+    var validation = validations.FirstOrDefault(candidate => candidate.Finding.Id == finding.Id);
+    if (finding.ProposedChange is not null && validation is not null)
     {
-        Console.WriteLine($"    {issue.Level}: {issue.Code} - {issue.Message}");
+        Console.WriteLine($"  Proposes: {Describe(finding.ProposedChange)} [{(validation.IsAccepted ? "accepted" : "REJECTED")}]");
+        foreach (var issue in validation.Issues)
+        {
+            Console.WriteLine($"    {issue.Level}: {issue.Code} - {issue.Message}");
+        }
+    }
+
+    if (advice.Source == AdviceSource.Model)
+    {
+        Console.WriteLine($"  AI explanation: {assessment.Explanation}");
+        if (assessment.Risks.Length > 0)
+        {
+            Console.WriteLine($"  AI risks: {assessment.Risks}");
+        }
     }
 }
 
@@ -83,25 +108,3 @@ static string Describe(IndexChange change) =>
         DropIndex drop => $"drop {drop.IndexName}",
         _ => throw new ArgumentOutOfRangeException(nameof(change), change, "Unknown index change."),
     };
-
-static RuleOptions ParseRuleOptions(string[] arguments)
-{
-    var options = new RuleOptions();
-
-    for (var i = 0; i < arguments.Length; i++)
-    {
-        options = arguments[i] switch
-        {
-            "--min-window-hours" => options with { MinimumStatisticsWindow = TimeSpan.FromHours(ParseNumber(arguments, ++i)) },
-            "--min-seeks" => options with { MinimumMissingIndexSeeks = (long)ParseNumber(arguments, ++i) },
-            _ => throw new ArgumentException($"Unknown option '{arguments[i]}'. Use --min-window-hours <n> or --min-seeks <n>."),
-        };
-    }
-
-    return options;
-}
-
-static double ParseNumber(string[] arguments, int position) =>
-    position < arguments.Length && double.TryParse(arguments[position], CultureInfo.InvariantCulture, out var value) && value >= 0
-        ? value
-        : throw new ArgumentException($"Option '{arguments[position - 1]}' needs a non-negative number.");

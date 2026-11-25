@@ -5,6 +5,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Anthropic" Version="13.14.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.15" />
     <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="10.0.15" />
   </ItemGroup>
