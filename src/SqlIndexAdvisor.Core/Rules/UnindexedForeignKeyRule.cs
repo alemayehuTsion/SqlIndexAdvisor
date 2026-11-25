@@ -23,6 +23,7 @@ public sealed class UnindexedForeignKeyRule : IIndexRule
             Id,
             Severity.Low,
             foreignKey.Table,
+            foreignKey.Name,
             $"Foreign key {foreignKey.Name} ({columns}) has no supporting index: deletes and key updates on " +
             $"{foreignKey.ReferencedTable} must scan {foreignKey.Table} to check it, and joins on {columns} cannot seek.",
             [

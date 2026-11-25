@@ -20,4 +20,7 @@ Project overview, layout and roadmap: @README.md
 ## Decisions made
 
 - Display name "SQL Index Advisor"; code name `SqlIndexAdvisor`.
+- AI is provider-independent: Core depends only on `Microsoft.Extensions.AI.Abstractions` (`IChatClient`);
+  the CLI selects Anthropic, OpenAI/Azure OpenAI, Ollama or None (rules only) from configuration. The model
+  returns finding IDs, ranks and explanations only; unknown IDs are rejected and the validator still runs.
 - Target framework `net10.0` (current LTS), SDK pinned in `global.json`. The solution uses the `.slnx`format.

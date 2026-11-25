@@ -43,6 +43,7 @@ public sealed class MissingIndexRule : IIndexRule
             Id,
             suggestion.AverageUserImpactPercent >= HighImpactPercent ? Severity.High : Severity.Medium,
             suggestion.Table,
+            Subject(suggestion),
             string.Create(
                 CultureInfo.InvariantCulture,
                 $"SQL Server recorded {suggestion.UserSeeks:N0} seeks that would use an index on {Describe(suggestion)}, " +
@@ -60,6 +61,7 @@ public sealed class MissingIndexRule : IIndexRule
             Id,
             Severity.Info,
             suggestion.Table,
+            Subject(suggestion),
             string.Create(
                 CultureInfo.InvariantCulture,
                 $"SQL Server suggests an index on {Describe(suggestion)}, but only {suggestion.UserSeeks:N0} seeks " +
@@ -76,6 +78,12 @@ public sealed class MissingIndexRule : IIndexRule
         Evidence.From("inequalityColumns", string.Join(", ", suggestion.InequalityColumns)),
         Evidence.From("includedColumns", string.Join(", ", suggestion.IncludedColumns)),
     ];
+
+    private static string Subject(MissingIndex suggestion)
+    {
+        var keys = string.Join(",", suggestion.EqualityColumns.Concat(suggestion.InequalityColumns));
+        return suggestion.IncludedColumns.Count > 0 ? $"{keys}+{string.Join(",", suggestion.IncludedColumns)}" : keys;
+    }
 
     private static string Describe(MissingIndex suggestion)
     {

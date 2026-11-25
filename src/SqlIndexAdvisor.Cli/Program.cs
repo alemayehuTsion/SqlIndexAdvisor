@@ -59,7 +59,7 @@ Console.WriteLine(
 foreach (var finding in findings)
 {
     Console.WriteLine();
-    Console.WriteLine($"[{finding.Severity}] {finding.RuleId} on {finding.Table}");
+    Console.WriteLine($"[{finding.Severity}] {finding.Id}");
     Console.WriteLine($"  {finding.Summary}");
     if (finding.ProposedChange is null)
     {

@@ -39,7 +39,7 @@ public class ProposalValidatorTests
     [Fact]
     public void ValidatesOnlyFindingsThatProposeAChange()
     {
-        var info = new Finding("test", Severity.Info, Dbo("Orders"), "Nothing to do.", [], ProposedChange: null);
+        var info = new Finding("test", Severity.Info, Dbo("Orders"), "Nothing", "Nothing to do.", [], ProposedChange: null);
 
         Assert.Empty(Validator.Validate(OrdersTable().Build(), [info]));
     }
@@ -323,7 +323,7 @@ public class ProposalValidatorTests
         Validator.Validate(snapshot, ToFindings(changes));
 
     private static IReadOnlyList<Finding> ToFindings(IEnumerable<IndexChange> changes) =>
-        changes.Select(change => new Finding("test", Severity.Medium, change.Table, "Test proposal.", [], change)).ToList();
+        changes.Select(change => new Finding("test", Severity.Medium, change.Table, change.IndexName, "Test proposal.", [], change)).ToList();
 
     private static CreateIndex Create(string table, string name, string[] keys, string[]? includes = null) =>
         new(Dbo(table), name, keys.Select(key => new IndexKeyColumn(key, IsDescending: false)).ToList(), includes ?? []);

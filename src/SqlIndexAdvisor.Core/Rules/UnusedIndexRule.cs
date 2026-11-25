@@ -33,6 +33,7 @@ public sealed class UnusedIndexRule : IIndexRule
             Id,
             Severity.Medium,
             index.Table,
+            index.Name,
             string.Create(
                 CultureInfo.InvariantCulture,
                 $"{index.Name} has not been read in {Describe(window)} but absorbed {index.Usage.LeafWrites:N0} row writes."),
@@ -44,6 +45,7 @@ public sealed class UnusedIndexRule : IIndexRule
             Id,
             Severity.Info,
             index.Table,
+            index.Name,
             $"{index.Name} has no reads, but statistics cover only {Describe(window)} " +
             $"(minimum {Describe(minimum)}), which is not enough history to call it unused.",
             [.. UsageEvidence(index, window), Evidence.From("minimumWindowHours", minimum.TotalHours)],

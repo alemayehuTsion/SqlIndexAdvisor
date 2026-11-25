@@ -16,11 +16,25 @@ public sealed class RulesEngine(IReadOnlyList<IIndexRule> rules)
     {
         var findings = rules.SelectMany(rule => rule.Evaluate(snapshot, options)).ToList();
 
-        return Consolidate(findings)
+        var ordered = Consolidate(findings)
             .OrderByDescending(finding => finding.Severity)
             .ThenBy(finding => finding.Table.ToString(), StringComparer.Ordinal)
-            .ThenBy(finding => finding.RuleId, StringComparer.Ordinal)
-            .ToList();
+            .ThenBy(finding => finding.RuleId, StringComparer.Ordinal);
+
+        return WithUniqueIds(ordered).ToList();
+    }
+
+    // The AI and the audit log refer to findings by Id, so a run must never contain two equal Ids. A clash means
+    // a rule produced two findings with the same subject; suffixing keeps the run usable and the Ids deterministic.
+    private static IEnumerable<Finding> WithUniqueIds(IEnumerable<Finding> findings)
+    {
+        var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var finding in findings)
+        {
+            var occurrence = seen[finding.Id] = seen.GetValueOrDefault(finding.Id) + 1;
+            yield return occurrence == 1 ? finding : finding with { Subject = $"{finding.Subject}#{occurrence}" };
+        }
     }
 
     // Two rules can propose the same change, or one proposal can make another unnecessary. Proposals are visited

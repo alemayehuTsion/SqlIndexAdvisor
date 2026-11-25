@@ -1,3 +1,4 @@
+using SqlIndexAdvisor.Core.Collection;
 using SqlIndexAdvisor.Core.Rules;
 
 using static SqlIndexAdvisor.Tests.Rules.SnapshotBuilder;
@@ -57,6 +58,39 @@ public class RulesEngineTests
     }
 
     [Fact]
+    public void BuildsReadableIdsFromRuleTableAndSubject()
+    {
+        var snapshot = Snapshot()
+            .WithIndex("Orders", "IX_Orders_Status", keys: ["Status"], writes: 500_000)
+            .WithForeignKey("FK_OrderItems_Products", "OrderItems", ["ProductId"], "Products")
+            .WithMissingIndex("Orders", equality: ["CustomerId"], inequality: ["OrderDate"], includes: ["Status"])
+            .Build();
+
+        var ids = RulesEngine.Default.Evaluate(snapshot, Options).Select(finding => finding.Id).Order(StringComparer.Ordinal);
+
+        Assert.Equal(
+            [
+                "missing-index:dbo.Orders:CustomerId,OrderDate+Status",
+                "unindexed-foreign-key:dbo.OrderItems:FK_OrderItems_Products",
+                "unused-index:dbo.Orders:IX_Orders_Status",
+            ],
+            ids);
+    }
+
+    [Fact]
+    public void SuffixesClashingIdsSoEveryFindingInARunIsAddressable()
+    {
+        var finding = new Finding("faulty-rule", Severity.Low, Dbo("Orders"), "Same", "Twice.", [], ProposedChange: null);
+        var engine = new RulesEngine([new FixedRule([finding, finding, finding])]);
+
+        var ids = engine.Evaluate(Snapshot().Build(), Options).Select(result => result.Id);
+
+        Assert.Equal(
+            ["faulty-rule:dbo.Orders:Same", "faulty-rule:dbo.Orders:Same#2", "faulty-rule:dbo.Orders:Same#3"],
+            ids);
+    }
+
+    [Fact]
     public void OrdersFindingsBySeverityThenTableThenRule()
     {
         var snapshot = Snapshot()
@@ -69,5 +103,12 @@ public class RulesEngineTests
         var findings = RulesEngine.Default.Evaluate(snapshot, new RuleOptions { MinimumMissingIndexSeeks = 1 });
 
         Assert.Equal([Severity.High, Severity.Low, Severity.Info], findings.Select(finding => finding.Severity));
+    }
+
+    private sealed class FixedRule(IReadOnlyList<Finding> findings) : IIndexRule
+    {
+        public string Id => "faulty-rule";
+
+        public IEnumerable<Finding> Evaluate(DatabaseSnapshot snapshot, RuleOptions options) => findings;
     }
 }

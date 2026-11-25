@@ -131,6 +131,18 @@ public class DatabaseCollectorTests(ShopDatabaseFixture database) : IClassFixtur
             finding.Evidence.Contains(new Evidence("foreignKey", "FK_Orders_Customers")));
         Assert.Contains(new Evidence("resolvedBy", "IX_Orders_CustomerId_OrderDate"), customerForeignKey.Evidence);
 
+        Assert.Equal(
+            [
+                "duplicate-index:dbo.Customers:IX_Customers_EmailLookup",
+                "missing-index:dbo.Orders:CustomerId,OrderDate",
+                "unindexed-foreign-key:dbo.OrderItems:FK_OrderItems_Products",
+                "unindexed-foreign-key:dbo.Orders:FK_Orders_Customers",
+                "unused-index:dbo.Customers:IX_Customers_Email",
+                "unused-index:dbo.Customers:IX_Customers_EmailLookup",
+                "unused-index:dbo.Orders:IX_Orders_Status",
+            ],
+            findings.Select(finding => finding.Id).Order(StringComparer.Ordinal));
+
         var validations = new ProposalValidator().Validate(snapshot, findings);
         Assert.Equal(5, validations.Count);
         Assert.All(validations, validation => Assert.Empty(validation.Issues));

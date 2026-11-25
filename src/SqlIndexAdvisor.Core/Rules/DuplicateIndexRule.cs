@@ -44,6 +44,7 @@ public sealed class DuplicateIndexRule : IIndexRule
             Id,
             Severity.Medium,
             duplicate.Table,
+            duplicate.Name,
             $"{duplicate.Name} duplicates {keeper.Name}: same key columns ({DescribeKeys(keeper)}) " +
             "and same included columns.",
             DuplicateEvidence(duplicate, keeper),
@@ -54,6 +55,7 @@ public sealed class DuplicateIndexRule : IIndexRule
             Id,
             Severity.Info,
             duplicate.Table,
+            duplicate.Name,
             $"{duplicate.Name} duplicates {keeper.Name}, but both enforce a constraint " +
             "(primary key, unique or clustered), so dropping either needs a manual review.",
             DuplicateEvidence(duplicate, keeper),
