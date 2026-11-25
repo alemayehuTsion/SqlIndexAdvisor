@@ -111,6 +111,80 @@ public class ProposalValidatorTests
         Assert.Equal(["index-not-found"], Codes(result));
     }
 
+    [Theory]
+    [InlineData(new[] { "CustomerId", "CustomerId" }, new string[0])]
+    [InlineData(new[] { "CustomerId" }, new[] { "OrderDate", "orderdate" })]
+    [InlineData(new[] { "CustomerId", "OrderDate" }, new[] { "OrderDate" })]
+    public void RejectsColumnUsedTwice(string[] keys, string[] includes)
+    {
+        var result = Assert.Single(Validate(OrdersTable().Build(), Create("Orders", "IX_Orders_Test", keys, includes)));
+
+        Assert.Equal(["column-repeated"], Codes(result));
+    }
+
+    [Theory]
+    [InlineData("nvarchar", -1)]
+    [InlineData("varbinary", -1)]
+    [InlineData("xml", -1)]
+    [InlineData("text", 16)]
+    [InlineData("geography", -1)]
+    public void RejectsLargeObjectTypesAsKeyColumns(string type, int maxLengthBytes)
+    {
+        var snapshot = OrdersTable().WithColumn("Orders", "Notes", type, maxLengthBytes).Build();
+
+        var result = Assert.Single(Validate(snapshot, Create("Orders", "IX_Orders_Notes", ["Notes"])));
+
+        Assert.Equal(["key-type-not-allowed"], Codes(result));
+    }
+
+    [Fact]
+    public void AllowsMaxTypesAsIncludedColumnsButNotLegacyLargeObjects()
+    {
+        var snapshot = OrdersTable()
+            .WithColumn("Orders", "Notes", "nvarchar", -1)
+            .WithColumn("Orders", "LegacyNotes", "ntext", 16)
+            .Build();
+
+        var results = Validate(
+            snapshot,
+            Create("Orders", "IX_A", ["CustomerId"], includes: ["Notes"]),
+            Create("Orders", "IX_B", ["CustomerId"], includes: ["LegacyNotes"]));
+
+        Assert.Empty(results[0].Issues);
+        Assert.Equal(["include-type-not-allowed"], Codes(results[1]));
+    }
+
+    [Fact]
+    public void RejectsKeyWiderThan1700Bytes()
+    {
+        var snapshot = OrdersTable()
+            .WithColumn("Orders", "Street", "nvarchar", 900)
+            .WithColumn("Orders", "City", "nvarchar", 802)
+            .Build();
+
+        var tooWide = Assert.Single(Validate(snapshot, Create("Orders", "IX_Orders_Address", ["Street", "City"])));
+        var justFits = Assert.Single(Validate(snapshot, Create("Orders", "IX_Orders_Street", ["Street", "CustomerId", "OrderDate"])));
+
+        Assert.Equal(["key-too-wide"], Codes(tooWide));
+        Assert.Contains("1702 bytes", tooWide.Issues[0].Message);
+        Assert.Empty(justFits.Issues);
+    }
+
+    [Fact]
+    public void RejectsMoreThan32KeyColumns()
+    {
+        var builder = Snapshot();
+        var columns = Enumerable.Range(1, 33).Select(i => $"C{i}").ToArray();
+        foreach (var column in columns)
+        {
+            builder.WithColumn("Wide", column, "tinyint", 1);
+        }
+
+        var result = Assert.Single(Validate(builder.Build(), Create("Wide", "IX_Wide_All", columns)));
+
+        Assert.Equal(["too-many-key-columns"], Codes(result));
+    }
+
     private static IReadOnlyList<ProposalValidation> Validate(DatabaseSnapshot snapshot, params IndexChange[] changes) =>
         Validator.Validate(
             snapshot,
