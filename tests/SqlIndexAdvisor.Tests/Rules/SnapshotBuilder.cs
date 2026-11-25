@@ -9,6 +9,7 @@ public sealed class SnapshotBuilder
     private readonly List<IndexInfo> _indexes = [];
     private readonly List<ForeignKey> _foreignKeys = [];
     private readonly List<MissingIndex> _missingIndexes = [];
+    private readonly List<TableColumn> _columns = [];
     private TimeSpan _window = TimeSpan.FromDays(30);
 
     public static SnapshotBuilder Snapshot() => new();
@@ -61,6 +62,18 @@ public sealed class SnapshotBuilder
         return this;
     }
 
+    public SnapshotBuilder WithColumn(
+        string table,
+        string name,
+        string type = "int",
+        int maxLengthBytes = 4,
+        bool isNullable = false,
+        bool isComputed = false)
+    {
+        _columns.Add(new TableColumn(Dbo(table), name, type, maxLengthBytes, isNullable, isComputed));
+        return this;
+    }
+
     public DatabaseSnapshot Build() =>
         new(
             "TestDb",
@@ -69,7 +82,8 @@ public sealed class SnapshotBuilder
             DatabaseCreatedAt: CollectedAt - _window - TimeSpan.FromDays(1),
             _indexes,
             _missingIndexes,
-            _foreignKeys);
+            _foreignKeys,
+            _columns);
 
     public static QualifiedName Dbo(string table) => new("dbo", table);
 

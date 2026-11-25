@@ -35,7 +35,7 @@ var windowStart = snapshot.StatisticsSince == snapshot.ServerStartTime ? "server
 Console.WriteLine($"{snapshot.DatabaseName} on SQL Server {server.Version} ({server.Edition})");
 Console.WriteLine(
     $"Collected {snapshot.Indexes.Count} indexes, {snapshot.MissingIndexes.Count} missing-index suggestions, " +
-    $"{snapshot.ForeignKeys.Count} foreign keys");
+    $"{snapshot.ForeignKeys.Count} foreign keys, {snapshot.Columns.Count} columns");
 Console.WriteLine(
     $"Statistics cover {snapshot.StatisticsWindow.TotalHours:N1} hours " +
     $"(since {windowStart}, {snapshot.StatisticsSince:yyyy-MM-dd HH:mm zzz})");

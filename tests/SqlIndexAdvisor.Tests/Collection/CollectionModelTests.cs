@@ -27,7 +27,7 @@ public class CollectionModelTests
     [Fact]
     public void DatabaseSnapshot_StatisticsWindow_StartsAtServerStartWhenDatabaseIsOlder()
     {
-        var snapshot = new DatabaseSnapshot("Shop", Collected, ServerStartTime: Later, DatabaseCreatedAt: Earlier, [], [], []);
+        var snapshot = new DatabaseSnapshot("Shop", Collected, ServerStartTime: Later, DatabaseCreatedAt: Earlier, [], [], [], []);
 
         Assert.Equal(Later, snapshot.StatisticsSince);
         Assert.Equal(TimeSpan.FromHours(5), snapshot.StatisticsWindow);
@@ -36,7 +36,7 @@ public class CollectionModelTests
     [Fact]
     public void DatabaseSnapshot_StatisticsWindow_StartsAtDatabaseCreationWhenServerIsOlder()
     {
-        var snapshot = new DatabaseSnapshot("Shop", Collected, ServerStartTime: Earlier, DatabaseCreatedAt: Later, [], [], []);
+        var snapshot = new DatabaseSnapshot("Shop", Collected, ServerStartTime: Earlier, DatabaseCreatedAt: Later, [], [], [], []);
 
         Assert.Equal(Later, snapshot.StatisticsSince);
         Assert.Equal(TimeSpan.FromHours(5), snapshot.StatisticsWindow);

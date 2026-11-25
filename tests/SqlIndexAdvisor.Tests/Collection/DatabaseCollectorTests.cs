@@ -131,6 +131,19 @@ public class DatabaseCollectorTests(ShopDatabaseFixture database) : IClassFixtur
         Assert.Contains(new Evidence("resolvedBy", "IX_Orders_CustomerId_OrderDate"), customerForeignKey.Evidence);
     }
 
+    [Fact]
+    public void Columns_AreCollectedInTableOrderWithSizesInBytes()
+    {
+        var columns = database.RequireSnapshot().Columns;
+
+        Assert.Equal(
+            ["OrderId", "CustomerId", "OrderDate", "Status", "TotalAmount"],
+            columns.Where(column => column.Table == new QualifiedName("dbo", "Orders")).Select(column => column.Name));
+
+        var email = Assert.Single(columns, column => column.Table == new QualifiedName("dbo", "Customers") && column.Name == "Email");
+        Assert.Equal(new TableColumn(new QualifiedName("dbo", "Customers"), "Email", "nvarchar", 512, false, false), email);
+    }
+
     private IndexInfo FindIndex(string table, string name) =>
         database.RequireIndexes().Single(index => index.Table == new QualifiedName("dbo", table) && index.Name == name);
 }

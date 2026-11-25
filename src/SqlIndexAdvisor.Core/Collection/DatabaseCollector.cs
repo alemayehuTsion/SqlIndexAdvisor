@@ -14,6 +14,7 @@ public sealed class DatabaseCollector(DbConnection connection)
     private static readonly string MissingIndexColumnsSql = SqlScript.Load("MissingIndexColumns");
     private static readonly string ForeignKeysSql = SqlScript.Load("ForeignKeys");
     private static readonly string ForeignKeyColumnsSql = SqlScript.Load("ForeignKeyColumns");
+    private static readonly string ColumnsSql = SqlScript.Load("Columns");
 
     public async Task<DatabaseSnapshot> CollectSnapshotAsync(CancellationToken cancellationToken = default)
     {
@@ -35,7 +36,8 @@ public sealed class DatabaseCollector(DbConnection connection)
                 context.DatabaseCreatedAt,
                 await CollectIndexesAsync(cancellationToken),
                 await CollectMissingIndexesAsync(cancellationToken),
-                await CollectForeignKeysAsync(cancellationToken));
+                await CollectForeignKeysAsync(cancellationToken),
+                await CollectColumnsAsync(cancellationToken));
         }
         finally
         {
@@ -89,6 +91,22 @@ public sealed class DatabaseCollector(DbConnection connection)
                 new QualifiedName(foreignKey.SchemaName, foreignKey.TableName),
                 columnsByForeignKey[foreignKey.ForeignKeyId].Select(column => column.ColumnName).ToList(),
                 new QualifiedName(foreignKey.ReferencedSchemaName, foreignKey.ReferencedTableName)))
+            .ToList();
+    }
+
+    private async Task<IReadOnlyList<TableColumn>> CollectColumnsAsync(CancellationToken cancellationToken)
+    {
+        var columns = await connection.QueryAsync<ColumnRow>(
+            new CommandDefinition(ColumnsSql, cancellationToken: cancellationToken));
+
+        return columns
+            .Select(column => new TableColumn(
+                new QualifiedName(column.SchemaName, column.TableName),
+                column.ColumnName,
+                column.TypeName,
+                column.MaxLengthBytes,
+                column.IsNullable,
+                column.IsComputed))
             .ToList();
     }
 
@@ -180,4 +198,13 @@ public sealed class DatabaseCollector(DbConnection connection)
     private sealed record ForeignKeyColumnRow(
         int ForeignKeyId,
         string ColumnName);
+
+    private sealed record ColumnRow(
+        string SchemaName,
+        string TableName,
+        string ColumnName,
+        string TypeName,
+        int MaxLengthBytes,
+        bool IsNullable,
+        bool IsComputed);
 }

@@ -7,7 +7,8 @@ public sealed record DatabaseSnapshot(
     DateTimeOffset DatabaseCreatedAt,
     IReadOnlyList<IndexInfo> Indexes,
     IReadOnlyList<MissingIndex> MissingIndexes,
-    IReadOnlyList<ForeignKey> ForeignKeys)
+    IReadOnlyList<ForeignKey> ForeignKeys,
+    IReadOnlyList<TableColumn> Columns)
 {
     // Usage counters reset on restart and start empty for a new database, so they only cover the later of the two.
     public DateTimeOffset StatisticsSince =>
