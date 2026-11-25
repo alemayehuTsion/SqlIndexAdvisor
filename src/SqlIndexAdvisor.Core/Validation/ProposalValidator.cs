@@ -66,7 +66,7 @@ public sealed class ProposalValidator(ValidatorOptions? options = null)
         DatabaseSnapshot snapshot, IReadOnlyList<IndexInfo> projectedIndexes, IndexChange change) =>
         change switch
         {
-            CreateIndex create => CheckIndexCount(projectedIndexes, create),
+            CreateIndex create => [.. CheckIndexCount(projectedIndexes, create), .. CheckRedundantWithExisting(projectedIndexes, create)],
             DropIndex drop => CheckForeignKeysStaySupported(snapshot, projectedIndexes, drop),
             _ => [],
         };
@@ -125,8 +125,44 @@ public sealed class ProposalValidator(ValidatorOptions? options = null)
             .. CheckKeyColumns(create, tableColumns),
             .. CheckIncludedColumns(create, tableColumns),
             .. CheckName(snapshot, proposals, create),
+            .. CheckNotIdenticalToExisting(snapshot, create),
         ];
     }
+
+    private static IEnumerable<ValidationIssue> CheckNotIdenticalToExisting(DatabaseSnapshot snapshot, CreateIndex create) =>
+        snapshot.Indexes
+            .Where(index => index.Table == create.Table
+                && !index.IsClustered
+                && CanStandInForNewIndex(index)
+                && index.KeyColumns.Count == create.KeyColumns.Count
+                && StartsWithKeys(index, create)
+                && index.IncludedColumns.ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(create.IncludedColumns))
+            .Select(index => ValidationIssue.Error(
+                "index-exists", $"{index.Name} already has exactly the key and included columns of {create.IndexName}."));
+
+    // A clustered index stores every column at its leaf level, so it covers any included columns.
+    private static IEnumerable<ValidationIssue> CheckRedundantWithExisting(IReadOnlyList<IndexInfo> projectedIndexes, CreateIndex create) =>
+        projectedIndexes
+            .Where(index => index.Table == create.Table
+                && !SameName(index.Name, create.IndexName)
+                && CanStandInForNewIndex(index)
+                && StartsWithKeys(index, create)
+                && (index.IsClustered || create.IncludedColumns.All(column => ColumnsOf(index).Contains(column, StringComparer.OrdinalIgnoreCase))))
+            .Take(1)
+            .Select(index => ValidationIssue.Warning(
+                "redundant-with-existing",
+                $"{index.Name} already starts with the same key columns and holds the included columns, so it can serve the same queries."));
+
+    private static bool CanStandInForNewIndex(IndexInfo index) => !index.IsDisabled && index.FilterDefinition is null;
+
+    private static bool StartsWithKeys(IndexInfo index, CreateIndex create) =>
+        index.KeyColumns.Count >= create.KeyColumns.Count
+        && index.KeyColumns
+            .Zip(create.KeyColumns)
+            .All(pair => SameName(pair.First.Name, pair.Second.Name) && pair.First.IsDescending == pair.Second.IsDescending);
+
+    private static IEnumerable<string> ColumnsOf(IndexInfo index) =>
+        index.KeyColumns.Select(key => key.Name).Concat(index.IncludedColumns);
 
     private static IEnumerable<ValidationIssue> CheckColumnsExist(
         CreateIndex create, IReadOnlyDictionary<string, TableColumn> tableColumns) =>

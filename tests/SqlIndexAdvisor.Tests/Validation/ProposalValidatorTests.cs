@@ -104,6 +104,74 @@ public class ProposalValidatorTests
     }
 
     [Fact]
+    public void RejectsCreateIdenticalToAnExistingIndexUnderAnotherName()
+    {
+        var result = Assert.Single(Validate(OrdersTable().Build(), Create("Orders", "IX_Orders_Status_Copy", ["Status"])));
+
+        Assert.False(result.IsAccepted);
+        Assert.Equal(["index-exists"], Codes(result));
+    }
+
+    [Fact]
+    public void AcceptsSameColumnsInADifferentKeyOrder()
+    {
+        var snapshot = OrdersTable().WithIndex("Orders", "IX_Orders_CustomerId_OrderDate", keys: ["CustomerId", "OrderDate"]).Build();
+
+        var result = Assert.Single(Validate(snapshot, Create("Orders", "IX_Orders_OrderDate_CustomerId", ["OrderDate", "CustomerId"])));
+
+        Assert.Empty(result.Issues);
+    }
+
+    [Fact]
+    public void WarnsButAcceptsWhenAWiderExistingIndexServesTheSameQueries()
+    {
+        var snapshot = OrdersTable()
+            .WithIndex("Orders", "IX_Orders_CustomerId_OrderDate", keys: ["CustomerId", "OrderDate"], includes: ["Status"])
+            .Build();
+
+        var result = Assert.Single(Validate(snapshot, Create("Orders", "IX_Orders_CustomerId", ["CustomerId"], includes: ["Status"])));
+
+        Assert.True(result.IsAccepted);
+        Assert.Equal(["redundant-with-existing"], Codes(result));
+    }
+
+    [Fact]
+    public void WarnsWhenTheClusteredIndexAlreadyLeadsWithTheSameKey()
+    {
+        var result = Assert.Single(Validate(OrdersTable().Build(), Create("Orders", "IX_Orders_OrderId", ["OrderId"], includes: ["Status"])));
+
+        Assert.True(result.IsAccepted);
+        Assert.Equal(["redundant-with-existing"], Codes(result));
+    }
+
+    [Theory]
+    [InlineData(true, null)]
+    [InlineData(false, "([Status]='Pending')")]
+    public void DisabledOrFilteredExistingIndexNeitherBlocksNorMakesTheNewIndexRedundant(bool isDisabled, string? filter)
+    {
+        var snapshot = OrdersTable()
+            .WithIndex("Orders", "IX_Orders_CustomerId_Old", keys: ["CustomerId"], isDisabled: isDisabled, filter: filter)
+            .Build();
+
+        var result = Assert.Single(Validate(snapshot, Create("Orders", "IX_Orders_CustomerId", ["CustomerId"])));
+
+        Assert.Empty(result.Issues);
+    }
+
+    [Fact]
+    public void DoesNotWarnWhenTheWiderIndexIsDroppedInTheSameBatch()
+    {
+        var snapshot = OrdersTable().WithIndex("Orders", "IX_Orders_CustomerId_OrderDate", keys: ["CustomerId", "OrderDate"]).Build();
+
+        var results = Validate(
+            snapshot,
+            Create("Orders", "IX_Orders_CustomerId", ["CustomerId"]),
+            new DropIndex(Dbo("Orders"), "IX_Orders_CustomerId_OrderDate"));
+
+        Assert.All(results, result => Assert.Empty(result.Issues));
+    }
+
+    [Fact]
     public void RejectsDropOfIndexThatDoesNotExist()
     {
         var result = Assert.Single(Validate(OrdersTable().Build(), new DropIndex(Dbo("Orders"), "IX_Orders_Gone")));
