@@ -1,5 +1,6 @@
 using SqlIndexAdvisor.Core.Collection;
 using SqlIndexAdvisor.Core.Rules;
+using SqlIndexAdvisor.Core.Validation;
 
 namespace SqlIndexAdvisor.Tests.Collection;
 
@@ -129,6 +130,10 @@ public class DatabaseCollectorTests(ShopDatabaseFixture database) : IClassFixtur
         var customerForeignKey = Assert.Single(findings, finding =>
             finding.Evidence.Contains(new Evidence("foreignKey", "FK_Orders_Customers")));
         Assert.Contains(new Evidence("resolvedBy", "IX_Orders_CustomerId_OrderDate"), customerForeignKey.Evidence);
+
+        var validations = new ProposalValidator().Validate(snapshot, findings);
+        Assert.Equal(5, validations.Count);
+        Assert.All(validations, validation => Assert.Empty(validation.Issues));
     }
 
     [Fact]

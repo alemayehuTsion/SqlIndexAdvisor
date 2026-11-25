@@ -7,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 
 using SqlIndexAdvisor.Core.Collection;
 using SqlIndexAdvisor.Core.Rules;
+using SqlIndexAdvisor.Core.Validation;
 
 var options = ParseRuleOptions(args);
 
@@ -48,17 +49,28 @@ if (options != new RuleOptions())
 }
 
 var findings = RulesEngine.Default.Evaluate(snapshot, options);
+var validations = new ProposalValidator().Validate(snapshot, findings);
+var validationByFinding = validations.ToDictionary(validation => validation.Finding);
 
 Console.WriteLine();
-Console.WriteLine($"{findings.Count} findings, {findings.Count(finding => finding.ProposedChange is not null)} proposed changes:");
+Console.WriteLine(
+    $"{findings.Count} findings, {validations.Count} proposed changes, " +
+    $"{validations.Count(validation => validation.IsAccepted)} accepted by validation:");
 foreach (var finding in findings)
 {
     Console.WriteLine();
     Console.WriteLine($"[{finding.Severity}] {finding.RuleId} on {finding.Table}");
     Console.WriteLine($"  {finding.Summary}");
-    if (finding.ProposedChange is not null)
+    if (finding.ProposedChange is null)
     {
-        Console.WriteLine($"  Proposes: {Describe(finding.ProposedChange)}");
+        continue;
+    }
+
+    var validation = validationByFinding[finding];
+    Console.WriteLine($"  Proposes: {Describe(finding.ProposedChange)} [{(validation.IsAccepted ? "accepted" : "REJECTED")}]");
+    foreach (var issue in validation.Issues)
+    {
+        Console.WriteLine($"    {issue.Level}: {issue.Code} - {issue.Message}");
     }
 }
 

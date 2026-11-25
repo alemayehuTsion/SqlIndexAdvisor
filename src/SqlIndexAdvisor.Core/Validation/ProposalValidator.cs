@@ -5,18 +5,36 @@ namespace SqlIndexAdvisor.Core.Validation;
 
 // Re-checks every proposed change against the snapshot without reusing rule logic, so a bug in a rule cannot
 // switch off the check that should catch it.
-public sealed class ProposalValidator
+public sealed class ProposalValidator(ValidatorOptions? options = null)
 {
+    private readonly ValidatorOptions _options = options ?? new();
+
+    // Errors depend only on the snapshot, so they are decided first. Warnings judge the index set that results from
+    // applying every accepted change together; rejected changes never count towards that result.
     public IReadOnlyList<ProposalValidation> Validate(DatabaseSnapshot snapshot, IReadOnlyList<Finding> findings)
     {
         var proposals = findings.Where(finding => finding.ProposedChange is not null).ToList();
+        var checkedProposals = proposals
+            .Select(finding => (Finding: finding, Errors: CheckErrors(snapshot, proposals, finding.ProposedChange!).ToList()))
+            .ToList();
 
-        return proposals
-            .Select(finding => new ProposalValidation(finding, Check(snapshot, proposals, finding.ProposedChange!).ToList()))
+        var acceptedChanges = checkedProposals
+            .Where(proposal => proposal.Errors.Count == 0)
+            .Select(proposal => proposal.Finding.ProposedChange!)
+            .ToList();
+        var projectedIndexes = ProjectIndexes(snapshot, acceptedChanges);
+
+        return checkedProposals
+            .Select(proposal => new ProposalValidation(
+                proposal.Finding,
+                proposal.Errors.Count > 0
+                    ? proposal.Errors
+                    : CheckWarnings(snapshot, projectedIndexes, proposal.Finding.ProposedChange!).ToList()))
             .ToList();
     }
 
-    private static IEnumerable<ValidationIssue> Check(DatabaseSnapshot snapshot, IReadOnlyList<Finding> proposals, IndexChange change)
+    private static IEnumerable<ValidationIssue> CheckErrors(
+        DatabaseSnapshot snapshot, IReadOnlyList<Finding> proposals, IndexChange change)
     {
         if (!snapshot.Columns.Any(column => column.Table == change.Table))
         {
@@ -29,6 +47,59 @@ public sealed class ProposalValidator
             DropIndex drop => CheckDrop(snapshot, drop),
             _ => [ValidationIssue.Error("unknown-change", $"Unsupported change type {change.GetType().Name}.")],
         };
+    }
+
+    private static IReadOnlyList<IndexInfo> ProjectIndexes(DatabaseSnapshot snapshot, IReadOnlyList<IndexChange> acceptedChanges)
+    {
+        var drops = acceptedChanges.OfType<DropIndex>().ToList();
+        var remaining = snapshot.Indexes
+            .Where(index => !drops.Any(drop => drop.Table == index.Table && SameName(drop.IndexName, index.Name)));
+        var created = acceptedChanges.OfType<CreateIndex>()
+            .Select(create => new IndexInfo(
+                create.Table, create.IndexName, IsClustered: false, IsUnique: false, IsPrimaryKey: false,
+                create.KeyColumns, create.IncludedColumns, new IndexUsage(0, 0, 0, 0, 0)));
+
+        return [.. remaining, .. created];
+    }
+
+    private IEnumerable<ValidationIssue> CheckWarnings(
+        DatabaseSnapshot snapshot, IReadOnlyList<IndexInfo> projectedIndexes, IndexChange change) =>
+        change switch
+        {
+            CreateIndex create => CheckIndexCount(projectedIndexes, create),
+            DropIndex drop => CheckForeignKeysStaySupported(snapshot, projectedIndexes, drop),
+            _ => [],
+        };
+
+    private IEnumerable<ValidationIssue> CheckIndexCount(IReadOnlyList<IndexInfo> projectedIndexes, CreateIndex create)
+    {
+        var count = projectedIndexes.Count(index => index.Table == create.Table && !index.IsClustered);
+
+        if (count > _options.MaxNonclusteredIndexesPerTable)
+        {
+            yield return ValidationIssue.Warning(
+                "too-many-indexes",
+                $"{create.Table} would have {count} nonclustered indexes " +
+                $"(guideline {_options.MaxNonclusteredIndexesPerTable}); every index slows down writes.");
+        }
+    }
+
+    private static IEnumerable<ValidationIssue> CheckForeignKeysStaySupported(
+        DatabaseSnapshot snapshot, IReadOnlyList<IndexInfo> projectedIndexes, DropIndex drop)
+    {
+        var dropped = snapshot.Indexes.Single(index => index.Table == drop.Table && SameName(index.Name, drop.IndexName));
+
+        var foreignKeysLosingSupport = snapshot.ForeignKeys
+            .Where(foreignKey => foreignKey.Table == drop.Table && SupportsForeignKey(dropped, foreignKey))
+            .Where(foreignKey => !projectedIndexes.Any(index => index.Table == drop.Table && SupportsForeignKey(index, foreignKey)));
+
+        foreach (var foreignKey in foreignKeysLosingSupport)
+        {
+            yield return ValidationIssue.Warning(
+                "drop-unindexes-foreign-key",
+                $"After the proposed changes no index supports foreign key {foreignKey.Name}; " +
+                $"changes to {foreignKey.ReferencedTable} would have to scan {foreignKey.Table}.");
+        }
     }
 
     private const int MaxKeyColumns = 32;
@@ -144,11 +215,28 @@ public sealed class ProposalValidator
 
     private static IEnumerable<ValidationIssue> CheckDrop(DatabaseSnapshot snapshot, DropIndex drop)
     {
-        if (!snapshot.Indexes.Any(index => index.Table == drop.Table && SameName(index.Name, drop.IndexName)))
+        var index = snapshot.Indexes.FirstOrDefault(index => index.Table == drop.Table && SameName(index.Name, drop.IndexName));
+        if (index is null)
         {
             yield return ValidationIssue.Error("index-not-found", $"There is no index {drop.IndexName} on {drop.Table} to drop.");
+            yield break;
+        }
+
+        if (index.IsPrimaryKey || index.IsUnique || index.IsClustered)
+        {
+            yield return ValidationIssue.Error(
+                "drop-protected",
+                $"{index.Name} is a primary key, unique or clustered index; dropping it changes constraints or the table's storage.");
         }
     }
+
+    private static bool SupportsForeignKey(IndexInfo index, ForeignKey foreignKey) =>
+        index.KeyColumns.Count >= foreignKey.Columns.Count
+        && index.KeyColumns
+            .Take(foreignKey.Columns.Count)
+            .Select(key => key.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase)
+            .SetEquals(foreignKey.Columns);
 
     private static IEnumerable<string> ColumnsOf(CreateIndex create) =>
         create.KeyColumns.Select(key => key.Name).Concat(create.IncludedColumns);

@@ -185,10 +185,145 @@ public class ProposalValidatorTests
         Assert.Equal(["too-many-key-columns"], Codes(result));
     }
 
-    private static IReadOnlyList<ProposalValidation> Validate(DatabaseSnapshot snapshot, params IndexChange[] changes) =>
-        Validator.Validate(
+    [Theory]
+    [InlineData("PK_Orders")]
+    [InlineData("UQ_Orders_OrderNumber")]
+    public void RejectsDropOfPrimaryKeyOrUniqueIndex(string indexName)
+    {
+        var snapshot = OrdersTable().WithIndex("Orders", "UQ_Orders_OrderNumber", keys: ["CustomerId"], isUnique: true).Build();
+
+        var result = Assert.Single(Validate(snapshot, new DropIndex(Dbo("Orders"), indexName)));
+
+        Assert.False(result.IsAccepted);
+        Assert.Equal(["drop-protected"], Codes(result));
+    }
+
+    [Fact]
+    public void WarnsButAcceptsDropOfOnlyIndexSupportingAForeignKey()
+    {
+        var snapshot = OrdersTable()
+            .WithIndex("Orders", "IX_Orders_CustomerId", keys: ["CustomerId"])
+            .WithForeignKey("FK_Orders_Customers", "Orders", ["CustomerId"], "Customers")
+            .Build();
+
+        var result = Assert.Single(Validate(snapshot, new DropIndex(Dbo("Orders"), "IX_Orders_CustomerId")));
+
+        Assert.True(result.IsAccepted);
+        var warning = Assert.Single(result.Issues);
+        Assert.Equal(("drop-unindexes-foreign-key", ValidationLevel.Warning), (warning.Code, warning.Level));
+    }
+
+    [Fact]
+    public void DoesNotWarnWhenAnotherIndexStillSupportsTheForeignKey()
+    {
+        var snapshot = OrdersTable()
+            .WithIndex("Orders", "IX_Orders_CustomerId", keys: ["CustomerId"])
+            .WithIndex("Orders", "IX_Orders_CustomerId_OrderDate", keys: ["CustomerId", "OrderDate"])
+            .WithForeignKey("FK_Orders_Customers", "Orders", ["CustomerId"], "Customers")
+            .Build();
+
+        var result = Assert.Single(Validate(snapshot, new DropIndex(Dbo("Orders"), "IX_Orders_CustomerId")));
+
+        Assert.Empty(result.Issues);
+    }
+
+    [Fact]
+    public void WarnsWhenTableWouldExceedTheIndexGuidelineAfterAllChanges()
+    {
+        var validator = new ProposalValidator(new ValidatorOptions { MaxNonclusteredIndexesPerTable = 2 });
+        IndexChange[] changes =
+        [
+            Create("Orders", "IX_Orders_CustomerId", ["CustomerId"]),
+            Create("Orders", "IX_Orders_OrderDate", ["OrderDate"]),
+        ];
+
+        var withoutDrop = validator.Validate(OrdersTable().Build(), ToFindings(changes));
+        var withDrop = validator.Validate(OrdersTable().Build(), ToFindings([.. changes, new DropIndex(Dbo("Orders"), "IX_Orders_Status")]));
+
+        Assert.All(withoutDrop, result =>
+        {
+            Assert.True(result.IsAccepted);
+            Assert.Equal(["too-many-indexes"], Codes(result));
+        });
+        Assert.All(withDrop, result => Assert.Empty(result.Issues));
+    }
+
+    [Fact]
+    public void WarnsOnEveryDropWhenTheBatchRemovesAllSupportForAForeignKey()
+    {
+        var snapshot = OrdersTable()
+            .WithIndex("Orders", "IX_Orders_CustomerId", keys: ["CustomerId"])
+            .WithIndex("Orders", "IX_Orders_CustomerId_OrderDate", keys: ["CustomerId", "OrderDate"])
+            .WithForeignKey("FK_Orders_Customers", "Orders", ["CustomerId"], "Customers")
+            .Build();
+
+        var results = Validate(
             snapshot,
-            changes.Select(change => new Finding("test", Severity.Medium, change.Table, "Test proposal.", [], change)).ToList());
+            new DropIndex(Dbo("Orders"), "IX_Orders_CustomerId"),
+            new DropIndex(Dbo("Orders"), "IX_Orders_CustomerId_OrderDate"));
+
+        Assert.All(results, result =>
+        {
+            Assert.True(result.IsAccepted);
+            Assert.Equal(["drop-unindexes-foreign-key"], Codes(result));
+        });
+    }
+
+    [Fact]
+    public void DoesNotWarnWhenACreateInTheSameBatchKeepsTheForeignKeySupported()
+    {
+        var snapshot = OrdersTable()
+            .WithIndex("Orders", "IX_Orders_CustomerId", keys: ["CustomerId"])
+            .WithForeignKey("FK_Orders_Customers", "Orders", ["CustomerId"], "Customers")
+            .Build();
+
+        var results = Validate(
+            snapshot,
+            new DropIndex(Dbo("Orders"), "IX_Orders_CustomerId"),
+            Create("Orders", "IX_Orders_CustomerId_OrderDate", ["CustomerId", "OrderDate"]));
+
+        Assert.All(results, result => Assert.Empty(result.Issues));
+    }
+
+    [Fact]
+    public void RejectedDropsDoNotLowerTheProjectedIndexCount()
+    {
+        var validator = new ProposalValidator(new ValidatorOptions { MaxNonclusteredIndexesPerTable = 2 });
+
+        var results = validator.Validate(OrdersTable().Build(), ToFindings(
+        [
+            Create("Orders", "IX_Orders_CustomerId", ["CustomerId"]),
+            Create("Orders", "IX_Orders_OrderDate", ["OrderDate"]),
+            new DropIndex(Dbo("Orders"), "PK_Orders"),
+            new DropIndex(Dbo("Orders"), "IX_Orders_Gone"),
+        ]));
+
+        Assert.Equal(["too-many-indexes"], Codes(results[0]));
+        Assert.Equal(["too-many-indexes"], Codes(results[1]));
+        Assert.Equal(["drop-protected"], Codes(results[2]));
+        Assert.Equal(["index-not-found"], Codes(results[3]));
+    }
+
+    [Fact]
+    public void RejectedCreatesDoNotRaiseTheProjectedIndexCount()
+    {
+        var validator = new ProposalValidator(new ValidatorOptions { MaxNonclusteredIndexesPerTable = 2 });
+
+        var results = validator.Validate(OrdersTable().Build(), ToFindings(
+        [
+            Create("Orders", "IX_Orders_CustomerId", ["CustomerId"]),
+            Create("Orders", "IX_Orders_Region", ["Region"]),
+        ]));
+
+        Assert.Empty(results[0].Issues);
+        Assert.Equal(["column-not-found"], Codes(results[1]));
+    }
+
+    private static IReadOnlyList<ProposalValidation> Validate(DatabaseSnapshot snapshot, params IndexChange[] changes) =>
+        Validator.Validate(snapshot, ToFindings(changes));
+
+    private static IReadOnlyList<Finding> ToFindings(IEnumerable<IndexChange> changes) =>
+        changes.Select(change => new Finding("test", Severity.Medium, change.Table, "Test proposal.", [], change)).ToList();
 
     private static CreateIndex Create(string table, string name, string[] keys, string[]? includes = null) =>
         new(Dbo(table), name, keys.Select(key => new IndexKeyColumn(key, IsDescending: false)).ToList(), includes ?? []);
