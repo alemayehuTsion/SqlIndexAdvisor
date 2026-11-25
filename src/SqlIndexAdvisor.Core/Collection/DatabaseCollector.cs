@@ -141,7 +141,9 @@ public sealed class DatabaseCollector(DbConnection connection)
                 .Where(column => column.IsIncluded)
                 .Select(column => column.ColumnName)
                 .ToList(),
-            new IndexUsage(index.UserSeeks, index.UserScans, index.UserLookups, index.UserUpdates, index.LeafWrites));
+            new IndexUsage(index.UserSeeks, index.UserScans, index.UserLookups, index.UserUpdates, index.LeafWrites),
+            index.IsDisabled,
+            index.FilterDefinition);
 
     // Dapper maps rows onto these records by constructor position, so the column order and SQL types in
     // Collection/Sql/*.sql must match the parameters exactly.
@@ -158,7 +160,9 @@ public sealed class DatabaseCollector(DbConnection connection)
         long UserScans,
         long UserLookups,
         long UserUpdates,
-        long LeafWrites);
+        long LeafWrites,
+        bool IsDisabled,
+        string? FilterDefinition);
 
     private sealed record IndexColumnRow(
         int ObjectId,

@@ -114,6 +114,42 @@ public class DuplicateIndexRuleTests
     }
 
     [Fact]
+    public void FullIndexIsNotADuplicateOfAFilteredIndexWithTheSameKeys()
+    {
+        var snapshot = Snapshot()
+            .WithIndex("Orders", "IX_Orders_CustomerId", keys: ["CustomerId"], reads: 0)
+            .WithIndex("Orders", "IX_Orders_CustomerId_Open", keys: ["CustomerId"], reads: 50, filter: "([Status]='Pending')")
+            .Build();
+
+        Assert.Empty(Rule.Evaluate(snapshot, Options));
+    }
+
+    [Fact]
+    public void FilteredIndexesWithTheSameFilterAreDuplicates()
+    {
+        var snapshot = Snapshot()
+            .WithIndex("Orders", "IX_A", keys: ["CustomerId"], filter: "([Status]='Pending')")
+            .WithIndex("Orders", "IX_B", keys: ["CustomerId"], filter: "([Status]='Pending')")
+            .WithIndex("Orders", "IX_C", keys: ["CustomerId"], filter: "([Status]='Paid')")
+            .Build();
+
+        var finding = Assert.Single(Rule.Evaluate(snapshot, Options));
+
+        Assert.Equal(new DropIndex(Dbo("Orders"), "IX_B"), finding.ProposedChange);
+    }
+
+    [Fact]
+    public void IgnoresDisabledIndexes()
+    {
+        var snapshot = Snapshot()
+            .WithIndex("Customers", "IX_Customers_Email", keys: ["Email"], reads: 40)
+            .WithIndex("Customers", "IX_Customers_EmailOld", keys: ["Email"], isDisabled: true)
+            .Build();
+
+        Assert.Empty(Rule.Evaluate(snapshot, Options));
+    }
+
+    [Fact]
     public void IgnoresIdenticalKeysOnDifferentTables()
     {
         var snapshot = Snapshot()

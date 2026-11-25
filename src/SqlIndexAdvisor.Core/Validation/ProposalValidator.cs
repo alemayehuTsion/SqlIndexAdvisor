@@ -57,7 +57,7 @@ public sealed class ProposalValidator(ValidatorOptions? options = null)
         var created = acceptedChanges.OfType<CreateIndex>()
             .Select(create => new IndexInfo(
                 create.Table, create.IndexName, IsClustered: false, IsUnique: false, IsPrimaryKey: false,
-                create.KeyColumns, create.IncludedColumns, new IndexUsage(0, 0, 0, 0, 0)));
+                create.KeyColumns, create.IncludedColumns, new IndexUsage(0, 0, 0, 0, 0), IsDisabled: false, FilterDefinition: null));
 
         return [.. remaining, .. created];
     }
@@ -73,7 +73,7 @@ public sealed class ProposalValidator(ValidatorOptions? options = null)
 
     private IEnumerable<ValidationIssue> CheckIndexCount(IReadOnlyList<IndexInfo> projectedIndexes, CreateIndex create)
     {
-        var count = projectedIndexes.Count(index => index.Table == create.Table && !index.IsClustered);
+        var count = projectedIndexes.Count(index => index.Table == create.Table && !index.IsClustered && !index.IsDisabled);
 
         if (count > _options.MaxNonclusteredIndexesPerTable)
         {
@@ -231,7 +231,9 @@ public sealed class ProposalValidator(ValidatorOptions? options = null)
     }
 
     private static bool SupportsForeignKey(IndexInfo index, ForeignKey foreignKey) =>
-        index.KeyColumns.Count >= foreignKey.Columns.Count
+        !index.IsDisabled
+        && index.FilterDefinition is null
+        && index.KeyColumns.Count >= foreignKey.Columns.Count
         && index.KeyColumns
             .Take(foreignKey.Columns.Count)
             .Select(key => key.Name)

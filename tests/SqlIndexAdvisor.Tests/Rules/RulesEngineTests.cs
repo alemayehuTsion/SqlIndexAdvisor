@@ -91,6 +91,34 @@ public class RulesEngineTests
     }
 
     [Fact]
+    public void KeepsProposalsWhoseKeysAreTheSameColumnsInADifferentOrder()
+    {
+        var snapshot = Snapshot()
+            .WithMissingIndex("Orders", equality: ["CustomerId"], inequality: ["OrderDate"])
+            .WithMissingIndex("Orders", equality: ["OrderDate"], inequality: ["CustomerId"])
+            .Build();
+
+        var proposals = RulesEngine.Default.Evaluate(snapshot, Options)
+            .Select(finding => finding.ProposedChange)
+            .OfType<CreateIndex>()
+            .Select(create => string.Join(",", create.KeyColumns.Select(key => key.Name)))
+            .Order(StringComparer.Ordinal);
+
+        Assert.Equal(["CustomerId,OrderDate", "OrderDate,CustomerId"], proposals);
+    }
+
+    [Fact]
+    public void NeverEmitsTheSameIdTwiceEvenWhenASubjectLooksLikeAGeneratedSuffix()
+    {
+        static Finding Make(string subject) => new("faulty-rule", Severity.Low, Dbo("Orders"), subject, "Clash.", [], ProposedChange: null);
+        var engine = new RulesEngine([new FixedRule([Make("CustomerId"), Make("CustomerId"), Make("CustomerId#2")])]);
+
+        var ids = engine.Evaluate(Snapshot().Build(), Options).Select(result => result.Id).ToList();
+
+        Assert.Equal(3, ids.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+    }
+
+    [Fact]
     public void OrdersFindingsBySeverityThenTableThenRule()
     {
         var snapshot = Snapshot()

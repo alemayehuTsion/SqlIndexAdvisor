@@ -1,5 +1,6 @@
 -- Rowstore indexes only (type 1 clustered, 2 nonclustered): heaps, columnstore, XML and spatial indexes are out
 -- of scope. The usage DMV is LEFT JOINed because an index never touched since restart has no row there.
+-- Disabled and filtered indexes are collected with those flags: neither can stand in for a full, usable index.
 SELECT
     i.object_id                              AS ObjectId,
     i.index_id                               AS IndexId,
@@ -13,7 +14,9 @@ SELECT
     ISNULL(u.user_scans, 0)                  AS UserScans,
     ISNULL(u.user_lookups, 0)                AS UserLookups,
     ISNULL(u.user_updates, 0)                AS UserUpdates,
-    ISNULL(o.LeafWrites, 0)                  AS LeafWrites
+    ISNULL(o.LeafWrites, 0)                  AS LeafWrites,
+    i.is_disabled                            AS IsDisabled,
+    IIF(i.has_filter = 1, i.filter_definition, NULL) AS FilterDefinition
 FROM sys.indexes i
 JOIN sys.tables t ON t.object_id = i.object_id
 JOIN sys.schemas s ON s.schema_id = t.schema_id

@@ -72,6 +72,19 @@ public class MissingIndexRuleTests
         Assert.Equal(covered, !Rule.Evaluate(snapshot, Options).Any());
     }
 
+    [Theory]
+    [InlineData(true, null)]
+    [InlineData(false, "([Status]='Pending')")]
+    public void DisabledOrFilteredIndexDoesNotServeTheSuggestion(bool isDisabled, string? filter)
+    {
+        var snapshot = Snapshot()
+            .WithIndex("Orders", "IX_Existing", keys: ["CustomerId", "OrderDate"], isDisabled: isDisabled, filter: filter)
+            .WithMissingIndex("Orders", equality: ["CustomerId"], inequality: ["OrderDate"])
+            .Build();
+
+        Assert.Single(Rule.Evaluate(snapshot, Options));
+    }
+
     [Fact]
     public void TreatsEqualityColumnsAsUnordered()
     {

@@ -38,6 +38,7 @@ public class DatabaseCollectorTests(ShopDatabaseFixture database) : IClassFixtur
         var primaryKeys = database.RequireIndexes().Where(index => index.Name.StartsWith("PK_")).ToList();
 
         Assert.Equal(4, primaryKeys.Count);
+        Assert.All(database.RequireIndexes(), index => Assert.Equal((false, null), (index.IsDisabled, index.FilterDefinition)));
         Assert.All(primaryKeys, index =>
         {
             Assert.True(index.IsPrimaryKey);

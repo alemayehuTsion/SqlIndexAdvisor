@@ -24,7 +24,9 @@ public sealed class MissingIndexRule : IIndexRule
     // Included columns are ignored: a matching index that lacks them should be extended, not duplicated.
     private static bool IsAlreadyCovered(DatabaseSnapshot snapshot, MissingIndex suggestion) =>
         snapshot.Indexes
-            .Where(index => index.Table == suggestion.Table && IndexCoverage.LeadsWith(index.KeyColumns, [.. suggestion.EqualityColumns]))
+            .Where(index => index.Table == suggestion.Table
+                && IndexCoverage.ServesEveryRow(index)
+                && IndexCoverage.LeadsWith(index.KeyColumns, [.. suggestion.EqualityColumns]))
             .Any(index => suggestion.InequalityColumns.Count == 0 || RangesOnInequalityColumn(index, suggestion));
 
     private static bool RangesOnInequalityColumn(IndexInfo index, MissingIndex suggestion)

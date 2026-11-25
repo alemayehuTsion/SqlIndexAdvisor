@@ -9,6 +9,7 @@ public sealed class DuplicateIndexRule : IIndexRule
     public IEnumerable<Finding> Evaluate(DatabaseSnapshot snapshot, RuleOptions options)
     {
         var duplicateGroups = snapshot.Indexes
+            .Where(index => !index.IsDisabled)
             .GroupBy(index => (index.Table, Signature(index)))
             .Where(group => group.Count() > 1);
 
@@ -27,11 +28,12 @@ public sealed class DuplicateIndexRule : IIndexRule
     }
 
     // Key column order and direction matter for seeks; included columns are just stored, so their order does not.
+    // A filtered index only duplicates another index with the same filter: a full index answers far more queries.
     private static string Signature(IndexInfo index)
     {
         var keys = index.KeyColumns.Select(key => $"{key.Name}{(key.IsDescending ? " DESC" : "")}");
         var includes = index.IncludedColumns.Order(StringComparer.Ordinal);
-        return $"{string.Join("\u001f", keys)}\u001e{string.Join("\u001f", includes)}";
+        return $"{string.Join("\u001f", keys)}\u001e{string.Join("\u001f", includes)}\u001d{index.FilterDefinition}";
     }
 
     private static (bool, bool, long, string) KeepPriority(IndexInfo index) =>

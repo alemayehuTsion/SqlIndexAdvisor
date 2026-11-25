@@ -8,4 +8,9 @@ public sealed record IndexInfo(
     bool IsPrimaryKey,
     IReadOnlyList<IndexKeyColumn> KeyColumns,
     IReadOnlyList<string> IncludedColumns,
-    IndexUsage Usage);
+    IndexUsage Usage,
+    bool IsDisabled,
+    string? FilterDefinition)
+{
+    public bool IsFiltered => FilterDefinition is not null;
+}

@@ -29,7 +29,9 @@ public sealed class SnapshotBuilder
         bool isClustered = false,
         bool isPrimaryKey = false,
         bool isUnique = false,
-        string[]? includes = null)
+        string[]? includes = null,
+        bool isDisabled = false,
+        string? filter = null)
     {
         _indexes.Add(new IndexInfo(
             Dbo(table),
@@ -39,7 +41,9 @@ public sealed class SnapshotBuilder
             isPrimaryKey,
             (keys ?? ["Id"]).Select(ParseKeyColumn).ToList(),
             includes ?? [],
-            new IndexUsage(UserSeeks: reads, UserScans: 0, UserLookups: 0, UserUpdates: writes > 0 ? 1 : 0, LeafWrites: writes)));
+            new IndexUsage(UserSeeks: reads, UserScans: 0, UserLookups: 0, UserUpdates: writes > 0 ? 1 : 0, LeafWrites: writes),
+            isDisabled,
+            filter));
         return this;
     }
 

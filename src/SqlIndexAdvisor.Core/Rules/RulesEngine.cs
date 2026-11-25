@@ -28,12 +28,17 @@ public sealed class RulesEngine(IReadOnlyList<IIndexRule> rules)
     // a rule produced two findings with the same subject; suffixing keeps the run usable and the Ids deterministic.
     private static IEnumerable<Finding> WithUniqueIds(IEnumerable<Finding> findings)
     {
-        var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var emittedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var finding in findings)
         {
-            var occurrence = seen[finding.Id] = seen.GetValueOrDefault(finding.Id) + 1;
-            yield return occurrence == 1 ? finding : finding with { Subject = $"{finding.Subject}#{occurrence}" };
+            var candidate = finding;
+            for (var suffix = 2; !emittedIds.Add(candidate.Id); suffix++)
+            {
+                candidate = finding with { Subject = $"{finding.Subject}#{suffix}" };
+            }
+
+            yield return candidate;
         }
     }
 
@@ -77,10 +82,19 @@ public sealed class RulesEngine(IReadOnlyList<IIndexRule> rules)
             (DropIndex a, DropIndex b) => a == b,
             (CreateIndex a, CreateIndex b) =>
                 a.Table == b.Table
-                && IndexCoverage.LeadsWith(a.KeyColumns, [.. b.KeyColumns.Select(key => key.Name)])
+                && StartsWithSameKeys(a, b)
                 && b.IncludedColumns.All(column => ColumnsOf(a).Contains(column, StringComparer.OrdinalIgnoreCase)),
             _ => false,
         };
+
+    // Unlike foreign key support, proposals are compared in key order: (CustomerId, OrderDate) seeks on a customer
+    // and ranges over dates, while (OrderDate, CustomerId) serves the opposite access pattern.
+    private static bool StartsWithSameKeys(CreateIndex wider, CreateIndex narrower) =>
+        wider.KeyColumns.Count >= narrower.KeyColumns.Count
+        && wider.KeyColumns
+            .Zip(narrower.KeyColumns)
+            .All(pair => string.Equals(pair.First.Name, pair.Second.Name, StringComparison.OrdinalIgnoreCase)
+                && pair.First.IsDescending == pair.Second.IsDescending);
 
     private static IEnumerable<string> ColumnsOf(CreateIndex index) =>
         index.KeyColumns.Select(key => key.Name).Concat(index.IncludedColumns);

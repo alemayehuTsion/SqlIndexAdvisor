@@ -269,6 +269,33 @@ public class ProposalValidatorTests
         });
     }
 
+    [Theory]
+    [InlineData(true, null)]
+    [InlineData(false, "([OrderDate]>'2025-01-01')")]
+    public void DisabledOrFilteredIndexDoesNotCountAsRemainingForeignKeySupport(bool isDisabled, string? filter)
+    {
+        var snapshot = OrdersTable()
+            .WithIndex("Orders", "IX_Orders_CustomerId", keys: ["CustomerId"])
+            .WithIndex("Orders", "IX_Orders_CustomerId_Partial", keys: ["CustomerId"], isDisabled: isDisabled, filter: filter)
+            .WithForeignKey("FK_Orders_Customers", "Orders", ["CustomerId"], "Customers")
+            .Build();
+
+        var result = Assert.Single(Validate(snapshot, new DropIndex(Dbo("Orders"), "IX_Orders_CustomerId")));
+
+        Assert.Equal(["drop-unindexes-foreign-key"], Codes(result));
+    }
+
+    [Fact]
+    public void DisabledIndexesDoNotCountTowardsTheIndexGuideline()
+    {
+        var validator = new ProposalValidator(new ValidatorOptions { MaxNonclusteredIndexesPerTable = 2 });
+        var snapshot = OrdersTable().WithIndex("Orders", "IX_Orders_Old", keys: ["OrderDate"], isDisabled: true).Build();
+
+        var result = Assert.Single(validator.Validate(snapshot, ToFindings([Create("Orders", "IX_Orders_CustomerId", ["CustomerId"])])));
+
+        Assert.Empty(result.Issues);
+    }
+
     [Fact]
     public void DoesNotWarnWhenACreateInTheSameBatchKeepsTheForeignKeySupported()
     {

@@ -64,6 +64,21 @@ public class UnindexedForeignKeyRuleTests
         Assert.Equal(supported, !Rule.Evaluate(snapshot, Options).Any());
     }
 
+    [Theory]
+    [InlineData(true, null)]
+    [InlineData(false, "([Quantity]>(10))")]
+    public void DisabledOrFilteredIndexDoesNotSupportTheForeignKey(bool isDisabled, string? filter)
+    {
+        var snapshot = Snapshot()
+            .WithIndex("OrderItems", "IX_OrderItems_ProductId", keys: ["ProductId"], isDisabled: isDisabled, filter: filter)
+            .WithForeignKey("FK_OrderItems_Products", "OrderItems", ["ProductId"], "Products")
+            .Build();
+
+        var change = Assert.IsType<CreateIndex>(Assert.Single(Rule.Evaluate(snapshot, Options)).ProposedChange);
+
+        Assert.Equal("IX_OrderItems_ProductId_2", change.IndexName);
+    }
+
     [Fact]
     public void AppendsSuffixWhenProposedNameIsAlreadyTaken()
     {
